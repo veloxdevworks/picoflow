@@ -17,7 +17,7 @@
     "lib": ["runtime/lib/adafruit_hid", "runtime/lib/picoflow"]
   },
   "hidProfiles": {
-    "absolute_mouse_keyboard": { "boot": "runtime/boot_abs_mouse.py" }
-  },
-  "comment": "hidProfiles.digitizer_keyboard (boot_digitizer.py) exists later; not shipped in this PR."
+    "absolute_mouse_keyboard": { "boot": "runtime/boot_abs_mouse.py" },
+    "digitizer_keyboard": { "boot": "runtime/boot_digitizer.py" }
+  }
 }

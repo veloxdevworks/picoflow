@@ -76,7 +76,14 @@ def _default_hid():
     import usb_hid
     from adafruit_hid.keyboard import Keyboard
 
-    return AbsoluteMouse(usb_hid.devices), Keyboard(usb_hid.devices)
+    devices = usb_hid.devices
+    keyboard = Keyboard(devices)
+    try:
+        return AbsoluteMouse(devices), keyboard
+    except ValueError:
+        from picoflow.digitizer import Digitizer
+
+        return Digitizer(devices), keyboard
 
 
 class Player:

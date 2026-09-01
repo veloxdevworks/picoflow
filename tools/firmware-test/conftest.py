@@ -35,5 +35,21 @@ class _UsbHidDevice:
     MOUSE = None
     CONSUMER_CONTROL = None
 
+    def __init__(
+        self,
+        report_descriptor=None,
+        usage_page=None,
+        usage=None,
+        report_ids=(),
+        in_report_lengths=(),
+        out_report_lengths=(),
+    ):
+        self.report_descriptor = report_descriptor
+        self.usage_page = usage_page
+        self.usage = usage
+        self.report_ids = report_ids
+        self.in_report_lengths = in_report_lengths
+        self.out_report_lengths = out_report_lengths
+
 
 _stub("usb_hid", Device=_UsbHidDevice, devices=(), enable=lambda *a, **k: None)
