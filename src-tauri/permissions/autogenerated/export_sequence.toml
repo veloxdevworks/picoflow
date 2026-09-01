@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-sequence"
+description = "Enables the export_sequence command without any pre-configured scope."
+commands.allow = ["export_sequence"]
+
+[[permission]]
+identifier = "deny-export-sequence"
+description = "Denies the export_sequence command without any pre-configured scope."
+commands.deny = ["export_sequence"]

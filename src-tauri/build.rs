@@ -10,6 +10,13 @@ fn main() {
             "detect_screen_quad",
             "warp_photo",
             "read_photo_bytes",
+            "create_project",
+            "load_project",
+            "save_project",
+            "duplicate_project",
+            "export_sequence",
+            "write_sequence_file",
+            "get_firmware_manifest",
         ]),
     ))
     .expect("failed to run tauri-build");

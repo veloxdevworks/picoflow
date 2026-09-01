@@ -15,6 +15,13 @@
     "allow-import-photos",
     "allow-detect-screen-quad",
     "allow-warp-photo",
-    "allow-read-photo-bytes"
+    "allow-read-photo-bytes",
+    "allow-create-project",
+    "allow-load-project",
+    "allow-save-project",
+    "allow-duplicate-project",
+    "allow-export-sequence",
+    "allow-write-sequence-file",
+    "allow-get-firmware-manifest"
   ]
 }

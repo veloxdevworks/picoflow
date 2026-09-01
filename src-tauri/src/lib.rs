@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod resources;
 mod session;
 
 pub use error::{AppError, ErrorCode};
@@ -29,6 +30,13 @@ pub fn run() {
             commands::image::detect_screen_quad,
             commands::image::warp_photo,
             commands::image::read_photo_bytes,
+            commands::project::create_project,
+            commands::project::load_project,
+            commands::project::save_project,
+            commands::project::duplicate_project,
+            commands::project::export_sequence,
+            commands::project::write_sequence_file,
+            commands::firmware::get_firmware_manifest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

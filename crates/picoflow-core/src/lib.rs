@@ -1,10 +1,12 @@
 //! Project, sequence, and timeline types.
 
+mod export;
 mod ids;
 mod project;
 mod sequence;
 mod timeline;
 
+pub use export::to_sequence;
 pub use ids::{ActionId, ClipId, PhotoId};
 pub use project::{
     parse_project, validate_action, validate_key, validate_mouse_move, validate_swipe,
