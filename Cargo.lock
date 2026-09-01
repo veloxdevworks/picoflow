@@ -2270,6 +2270,7 @@ dependencies = [
 name = "picoflow"
 version = "0.1.0"
 dependencies = [
+ "picoflow-core",
  "picoflow-flash",
  "serde",
  "serde_json",

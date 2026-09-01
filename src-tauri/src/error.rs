@@ -93,6 +93,18 @@ impl From<io::Error> for AppError {
     }
 }
 
+impl From<picoflow_core::Error> for AppError {
+    fn from(err: picoflow_core::Error) -> Self {
+        match err {
+            picoflow_core::Error::ClipNotFound(id) => {
+                Self::not_found(format!("clip {id} not found"))
+            }
+            picoflow_core::Error::InvalidAction(message) => Self::invalid_action(message),
+            other => Self::invalid_project(other.to_string()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +115,17 @@ mod tests {
         let value = serde_json::to_value(&err).expect("serialize AppError");
         assert_eq!(value["code"], "canceled");
         assert_eq!(value["message"], "user closed the dialog");
+    }
+
+    #[test]
+    fn maps_core_clip_not_found() {
+        let err = AppError::from(picoflow_core::Error::ClipNotFound("missing".into()));
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn maps_core_timeline_to_invalid_project() {
+        let err = AppError::from(picoflow_core::Error::invalid_timeline("bad reorder"));
+        assert_eq!(err.code, ErrorCode::InvalidProject);
     }
 }

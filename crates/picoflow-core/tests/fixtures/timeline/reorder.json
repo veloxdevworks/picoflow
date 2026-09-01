@@ -1,0 +1,97 @@
+{
+  "project": {
+    "version": 1,
+    "name": "reorder-by-offset",
+    "target": {
+      "hidProfile": "absolute_mouse_keyboard",
+      "runMode": "auto",
+      "settleMs": 1200,
+      "buttonPin": "GP15"
+    },
+    "photos": [],
+    "clips": [
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X81",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 0,
+        "durationMs": 4000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X82",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 4000,
+        "durationMs": 3000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X83",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 7000,
+        "durationMs": 2000
+      }
+    ],
+    "actions": [
+      {
+        "id": "01M1FDF09T0003ZGB5Y17A5182",
+        "atMs": 100,
+        "type": "tap",
+        "x": 0.1,
+        "y": 0.1,
+        "holdMs": 60
+      },
+      {
+        "id": "01M1FDF09T0008BND1MW6JQNG3",
+        "atMs": 4500,
+        "type": "tap",
+        "x": 0.2,
+        "y": 0.2,
+        "holdMs": 60
+      },
+      {
+        "id": "01M1FDF09T00037GHHC52ZMW04",
+        "atMs": 7100,
+        "type": "tap",
+        "x": 0.3,
+        "y": 0.3,
+        "holdMs": 60
+      }
+    ]
+  },
+  "orderedClipIds": [
+    "01M1FDF09T000FDT4HY97S6X83",
+    "01M1FDF09T000FDT4HY97S6X81",
+    "01M1FDF09T000FDT4HY97S6X82"
+  ],
+  "expected": {
+    "clips": [
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X83",
+        "startMs": 0,
+        "durationMs": 2000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X81",
+        "startMs": 2000,
+        "durationMs": 4000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X82",
+        "startMs": 6000,
+        "durationMs": 3000
+      }
+    ],
+    "actions": [
+      {
+        "id": "01M1FDF09T0003ZGB5Y17A5182",
+        "atMs": 2100
+      },
+      {
+        "id": "01M1FDF09T0008BND1MW6JQNG3",
+        "atMs": 6500
+      },
+      {
+        "id": "01M1FDF09T00037GHHC52ZMW04",
+        "atMs": 100
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "project": {
+    "version": 1,
+    "name": "insert-wait",
+    "target": {
+      "hidProfile": "absolute_mouse_keyboard",
+      "runMode": "auto",
+      "settleMs": 1200,
+      "buttonPin": "GP15"
+    },
+    "photos": [],
+    "clips": [
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X81",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 0,
+        "durationMs": 4000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X82",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 4000,
+        "durationMs": 4000
+      }
+    ],
+    "actions": [
+      {
+        "id": "01M1FDF09T0003ZGB5Y17A5182",
+        "atMs": 1000,
+        "type": "tap",
+        "x": 0.5,
+        "y": 0.5,
+        "holdMs": 60
+      },
+      {
+        "id": "01M1FDF09T0008BND1MW6JQNG3",
+        "atMs": 3000,
+        "type": "tap",
+        "x": 0.4,
+        "y": 0.4,
+        "holdMs": 60
+      },
+      {
+        "id": "01M1FDF09T00037GHHC52ZMW04",
+        "atMs": 5000,
+        "type": "tap",
+        "x": 0.3,
+        "y": 0.3,
+        "holdMs": 60
+      }
+    ]
+  },
+  "atMs": 2000,
+  "durationMs": 500,
+  "expected": {
+    "clipDurations": [4000, 4000],
+    "actionAtMs": {
+      "01M1FDF09T0003ZGB5Y17A5182": 1000,
+      "01M1FDF09T0008BND1MW6JQNG3": 3500,
+      "01M1FDF09T00037GHHC52ZMW04": 5500
+    },
+    "waitAtMs": 2000,
+    "waitDurationMs": 500
+  }
+}

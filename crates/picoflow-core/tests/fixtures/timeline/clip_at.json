@@ -1,0 +1,99 @@
+{
+  "scenarios": [
+    {
+      "name": "two packed clips",
+      "clips": [
+        {
+          "id": "01M1FDF09T000FDT4HY97S6X81",
+          "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+          "startMs": 0,
+          "durationMs": 4000
+        },
+        {
+          "id": "01M1FDF09T000FDT4HY97S6X82",
+          "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+          "startMs": 4000,
+          "durationMs": 4000
+        }
+      ],
+      "actions": [
+        {
+          "id": "01M1FDF09T0003ZGB5Y17A5182",
+          "atMs": 1800,
+          "type": "tap",
+          "x": 0.5,
+          "y": 0.5,
+          "holdMs": 60
+        },
+        {
+          "id": "01M1FDF09T0008BND1MW6JQNG3",
+          "atMs": 4000,
+          "type": "tap",
+          "x": 0.5,
+          "y": 0.5,
+          "holdMs": 60
+        },
+        {
+          "id": "01M1FDF09T00037GHHC52ZMW04",
+          "atMs": 7500,
+          "type": "wait",
+          "durationMs": 300
+        }
+      ],
+      "clipAt": [
+        { "ms": 0, "clipId": "01M1FDF09T000FDT4HY97S6X81" },
+        { "ms": 3999, "clipId": "01M1FDF09T000FDT4HY97S6X81" },
+        { "ms": 4000, "clipId": "01M1FDF09T000FDT4HY97S6X82" },
+        { "ms": 7999, "clipId": "01M1FDF09T000FDT4HY97S6X82" },
+        { "ms": 8000, "clipId": "01M1FDF09T000FDT4HY97S6X82" },
+        { "ms": 99999, "clipId": "01M1FDF09T000FDT4HY97S6X82" }
+      ],
+      "upcoming": [
+        { "ms": 0, "actionId": "01M1FDF09T0003ZGB5Y17A5182" },
+        { "ms": 1800, "actionId": "01M1FDF09T0003ZGB5Y17A5182" },
+        { "ms": 1801, "actionId": "01M1FDF09T0008BND1MW6JQNG3" },
+        { "ms": 4000, "actionId": "01M1FDF09T0008BND1MW6JQNG3" },
+        { "ms": 7500, "actionId": "01M1FDF09T00037GHHC52ZMW04" },
+        { "ms": 7501, "actionId": null }
+      ]
+    },
+    {
+      "name": "empty project",
+      "clips": [],
+      "actions": [],
+      "clipAt": [{ "ms": 0, "clipId": null }, { "ms": 1000, "clipId": null }],
+      "upcoming": [{ "ms": 0, "actionId": null }]
+    },
+    {
+      "name": "single clip",
+      "clips": [
+        {
+          "id": "01M1FDF09T000FDT4HY97S6X81",
+          "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+          "startMs": 0,
+          "durationMs": 4000
+        }
+      ],
+      "actions": [
+        {
+          "id": "01M1FDF09T0003ZGB5Y17A5182",
+          "atMs": 3500,
+          "type": "tap",
+          "x": 0.5,
+          "y": 0.5,
+          "holdMs": 60
+        }
+      ],
+      "clipAt": [
+        { "ms": 0, "clipId": "01M1FDF09T000FDT4HY97S6X81" },
+        { "ms": 3999, "clipId": "01M1FDF09T000FDT4HY97S6X81" },
+        { "ms": 4000, "clipId": "01M1FDF09T000FDT4HY97S6X81" }
+      ],
+      "upcoming": [
+        { "ms": 0, "actionId": "01M1FDF09T0003ZGB5Y17A5182" },
+        { "ms": 3500, "actionId": "01M1FDF09T0003ZGB5Y17A5182" },
+        { "ms": 3501, "actionId": null }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ripple-clip"
+description = "Enables the ripple_clip command without any pre-configured scope."
+commands.allow = ["ripple_clip"]
+
+[[permission]]
+identifier = "deny-ripple-clip"
+description = "Denies the ripple_clip command without any pre-configured scope."
+commands.deny = ["ripple_clip"]

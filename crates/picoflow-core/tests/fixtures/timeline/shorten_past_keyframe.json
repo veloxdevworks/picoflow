@@ -1,0 +1,71 @@
+{
+  "project": {
+    "version": 1,
+    "name": "shorten-past-keyframe",
+    "target": {
+      "hidProfile": "absolute_mouse_keyboard",
+      "runMode": "auto",
+      "settleMs": 1200,
+      "buttonPin": "GP15"
+    },
+    "photos": [],
+    "clips": [
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X81",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 0,
+        "durationMs": 4000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X82",
+        "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+        "startMs": 4000,
+        "durationMs": 4000
+      }
+    ],
+    "actions": [
+      {
+        "id": "01M1FDF09T0003ZGB5Y17A5182",
+        "atMs": 3500,
+        "type": "tap",
+        "x": 0.5,
+        "y": 0.5,
+        "holdMs": 60
+      },
+      {
+        "id": "01M1FDF09T0008BND1MW6JQNG3",
+        "atMs": 5000,
+        "type": "tap",
+        "x": 0.2,
+        "y": 0.3,
+        "holdMs": 60
+      }
+    ]
+  },
+  "clipId": "01M1FDF09T000FDT4HY97S6X81",
+  "newDurationMs": 2000,
+  "expected": {
+    "clips": [
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X81",
+        "startMs": 0,
+        "durationMs": 2000
+      },
+      {
+        "id": "01M1FDF09T000FDT4HY97S6X82",
+        "startMs": 2000,
+        "durationMs": 4000
+      }
+    ],
+    "actions": [
+      {
+        "id": "01M1FDF09T0003ZGB5Y17A5182",
+        "atMs": 1999
+      },
+      {
+        "id": "01M1FDF09T0008BND1MW6JQNG3",
+        "atMs": 3000
+      }
+    ]
+  }
+}

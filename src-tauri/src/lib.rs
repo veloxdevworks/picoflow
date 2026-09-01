@@ -19,7 +19,12 @@ pub fn run() {
             tracing::info!("picoflow starting");
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::flash::list_pico_volumes])
+        .invoke_handler(tauri::generate_handler![
+            commands::flash::list_pico_volumes,
+            commands::timeline::ripple_clip,
+            commands::timeline::reorder_clips,
+            commands::timeline::insert_wait,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
