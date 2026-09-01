@@ -5,6 +5,7 @@ fn main() {
             "ripple_clip",
             "reorder_clips",
             "insert_wait",
+            "pick_import_photos",
             "import_photos",
             "detect_screen_quad",
             "warp_photo",

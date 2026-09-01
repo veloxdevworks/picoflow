@@ -4,10 +4,38 @@ use std::sync::Mutex;
 
 use picoflow_core::{Photo, PhotoId, Point};
 use picoflow_image::{decode_path, save_oriented, DetectResult};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::error::AppError;
 use crate::session::Session;
+
+/// Native multi-file picker. Records the selection on the session so `import_photos`
+/// can require those exact paths (JS dialog results are not trusted).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn pick_import_photos(
+    app: AppHandle,
+    session: State<'_, Mutex<Session>>,
+) -> Result<Vec<String>, AppError> {
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("Photos", &["jpg", "jpeg", "png", "heic", "heif"])
+        .set_title("Import photos")
+        .blocking_pick_files();
+    let Some(files) = picked else {
+        return Err(AppError::canceled("user closed the dialog"));
+    };
+
+    let mut paths = Vec::with_capacity(files.len());
+    for file in files {
+        let path = file.into_path().map_err(|e| AppError::io(e.to_string()))?;
+        paths.push(path);
+    }
+
+    let mut session = lock_session(&session)?;
+    Ok(record_dialog_paths(&mut session, paths))
+}
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn import_photos(
@@ -163,6 +191,15 @@ fn require_project_dir(session: &Session) -> Result<PathBuf, AppError> {
         .ok_or_else(|| AppError::path_not_allowed("no project is open"))
 }
 
+fn record_dialog_paths(session: &mut Session, paths: Vec<PathBuf>) -> Vec<String> {
+    let strings = paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    session.last_dialog_paths = paths;
+    strings
+}
+
 fn ensure_import_paths(session: &Session, paths: &[PathBuf]) -> Result<(), AppError> {
     if paths.len() != session.last_dialog_paths.len()
         || !paths
@@ -276,11 +313,12 @@ mod tests {
 
     #[test]
     fn import_paths_must_match_dialog() {
-        let session = Session {
+        let mut session = Session {
             project_dir: Some(PathBuf::from("/tmp/proj")),
-            last_dialog_paths: vec![PathBuf::from("/tmp/a.jpg")],
+            last_dialog_paths: vec![],
             last_volumes: vec![],
         };
+        record_dialog_paths(&mut session, vec![PathBuf::from("/tmp/a.jpg")]);
         let err = ensure_import_paths(&session, &[PathBuf::from("/tmp/b.jpg")]).unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
         ensure_import_paths(&session, &[PathBuf::from("/tmp/a.jpg")]).expect("same path string");

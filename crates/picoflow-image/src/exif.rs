@@ -39,9 +39,23 @@ mod tests {
 
     #[test]
     fn orientation_6_swaps_width_and_height() {
-        let img = rgb(40, 80, [200, 10, 10]);
-        let oriented = apply_orientation(img, 6);
+        let mut img = rgb(40, 80, [20, 80, 180]);
+        for x in 0..40 {
+            img.put_pixel(x, 0, Rgb([220, 30, 30]));
+        }
+        let oriented = apply_orientation(img.clone(), 6);
         assert_eq!(oriented.dimensions(), (80, 40));
+        // rotate90 CW: stored (x, 0) → (h-1, x) = right column.
+        for y in 0..40 {
+            assert_eq!(oriented.get_pixel(79, y), &Rgb([220, 30, 30]));
+        }
+        // rotate270 would put that row on the left, not the right.
+        let ccw = apply_orientation(img, 8);
+        assert_eq!(ccw.dimensions(), (80, 40));
+        for y in 0..40 {
+            assert_ne!(ccw.get_pixel(79, y), &Rgb([220, 30, 30]));
+            assert_eq!(ccw.get_pixel(0, y), &Rgb([220, 30, 30]));
+        }
     }
 
     #[test]

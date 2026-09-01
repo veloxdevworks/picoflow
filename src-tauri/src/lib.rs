@@ -24,6 +24,7 @@ pub fn run() {
             commands::timeline::ripple_clip,
             commands::timeline::reorder_clips,
             commands::timeline::insert_wait,
+            commands::image::pick_import_photos,
             commands::image::import_photos,
             commands::image::detect_screen_quad,
             commands::image::warp_photo,

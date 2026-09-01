@@ -132,6 +132,17 @@ fn synthetic_rectangle_detects_with_high_confidence() {
     );
 }
 
+fn assert_red_right_column(img: &RgbImage) {
+    assert_eq!(img.dimensions(), (80, 40));
+    for y in 0..40 {
+        let p = img.get_pixel(79, y).0;
+        assert!(
+            p[0] > p[2] && p[0] > 150,
+            "EXIF 6 must rotate 90 CW so stored top row becomes the right column; y={y} {p:?}"
+        );
+    }
+}
+
 #[test]
 fn orientation6_swaps_stored_dimensions() {
     let path = write_orientation6_fixture();
@@ -145,6 +156,21 @@ fn orientation6_swaps_stored_dimensions() {
         oriented.height()
     );
     assert_eq!(oriented.dimensions(), (80, 40));
+    assert_red_right_column(&oriented.pixels);
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let dest = dir.path().join("oriented.jpg");
+    save_oriented(&oriented, &dest).expect("persist already-oriented jpeg");
+    let baked = image::open(&dest).expect("open persisted without exif apply");
+    assert_eq!(
+        baked.dimensions(),
+        (80, 40),
+        "persisted SOF must already be oriented"
+    );
+    assert_red_right_column(&baked.to_rgb8());
+    let again = decode_path(&dest).expect("re-decode persisted");
+    assert_eq!(again.dimensions(), (80, 40));
+    assert_red_right_column(&again.pixels);
 }
 
 #[test]

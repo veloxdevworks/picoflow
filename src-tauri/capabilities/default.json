@@ -11,6 +11,7 @@
     "allow-ripple-clip",
     "allow-reorder-clips",
     "allow-insert-wait",
+    "allow-pick-import-photos",
     "allow-import-photos",
     "allow-detect-screen-quad",
     "allow-warp-photo",
