@@ -1,3 +1,4 @@
+mod commands;
 mod error;
 mod session;
 
@@ -18,6 +19,7 @@ pub fn run() {
             tracing::info!("picoflow starting");
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![commands::flash::list_pico_volumes])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

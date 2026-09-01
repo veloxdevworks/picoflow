@@ -14,7 +14,6 @@ pub struct Session {
 
 /// Volume identity remembered from the last `list_pico_volumes` scan.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct LastVolume {
     pub id: String,
     pub path: PathBuf,
