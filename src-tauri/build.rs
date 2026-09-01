@@ -5,6 +5,10 @@ fn main() {
             "ripple_clip",
             "reorder_clips",
             "insert_wait",
+            "import_photos",
+            "detect_screen_quad",
+            "warp_photo",
+            "read_photo_bytes",
         ]),
     ))
     .expect("failed to run tauri-build");

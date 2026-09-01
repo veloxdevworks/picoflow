@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 picoflow-core = { path = "../crates/picoflow-core" }
 picoflow-flash = { path = "../crates/picoflow-flash" }
+picoflow-image = { path = "../crates/picoflow-image" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["protocol-asset"] }

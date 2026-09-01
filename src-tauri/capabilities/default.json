@@ -10,6 +10,10 @@
     "allow-list-pico-volumes",
     "allow-ripple-clip",
     "allow-reorder-clips",
-    "allow-insert-wait"
+    "allow-insert-wait",
+    "allow-import-photos",
+    "allow-detect-screen-quad",
+    "allow-warp-photo",
+    "allow-read-photo-bytes"
   ]
 }

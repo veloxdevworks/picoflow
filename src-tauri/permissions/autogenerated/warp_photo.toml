@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-warp-photo"
+description = "Enables the warp_photo command without any pre-configured scope."
+commands.allow = ["warp_photo"]
+
+[[permission]]
+identifier = "deny-warp-photo"
+description = "Denies the warp_photo command without any pre-configured scope."
+commands.deny = ["warp_photo"]

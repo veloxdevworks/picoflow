@@ -3,3 +3,12 @@ name = "picoflow-image"
 version = "0.1.0"
 edition = "2021"
 description = "Photo decode, screen-quad detect, and warp for PicoFlow"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+imageproc = "0.25"
+kamadak-exif = "0.5"
+nalgebra = "0.33"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+thiserror = "2"

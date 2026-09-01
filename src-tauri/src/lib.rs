@@ -24,6 +24,10 @@ pub fn run() {
             commands::timeline::ripple_clip,
             commands::timeline::reorder_clips,
             commands::timeline::insert_wait,
+            commands::image::import_photos,
+            commands::image::detect_screen_quad,
+            commands::image::warp_photo,
+            commands::image::read_photo_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
