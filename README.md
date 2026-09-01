@@ -26,7 +26,7 @@ cargo test --workspace
 2. Plug in USB. The board mounts as `RPI-RP2`.
 3. Copy the CircuitPython UF2 onto that volume as **raw bytes**.
 
-Do **not** drag the UF2 in Finder on macOS Ventura+. Finder writes extended attributes that the RP2040 bootloader cannot store, and the copy can fail or brick the flash step. Use a POSIX byte copy (`open` / `write` / `fsync`). A helper script will live at `tools/copy-uf2.py`.
+Do **not** drag the UF2 in Finder on macOS Ventura+. Finder writes extended attributes that the RP2040 bootloader cannot store, and the copy can fail or brick the flash step. Use a POSIX byte copy (`open` / `write` / `fsync`) via `tools/copy-uf2.py` (dest vanished after a full write is success). HID spike procedure: `docs/hid-spike.md`.
 
 After the UF2, the board remounts as `CIRCUITPY`. Sequence files are written the same way (byte copy, no Finder, no `._*` AppleDouble files). Then unplug and plug the Pico into the target tablet.
 

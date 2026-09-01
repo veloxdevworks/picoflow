@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "circuitpython": {
+    "version": "10.3.0",
+    "board": "raspberry_pi_pico",
+    "language": "en_US",
+    "uf2": "circuitpython/adafruit-circuitpython-raspberry_pi_pico-en_US-10.3.0.uf2",
+    "sha256": "16c6e69a158ab66fe3594b65133b9712882b6cd6a9e252a9309d417fb16997e1"
+  },
+  "runtime": {
+    "version": "0.1.0",
+    "entry": {
+      "code": "runtime/code.py",
+      "defaultSequence": "runtime/sequence.default.json",
+      "identity": "runtime/picoflow.json"
+    },
+    "lib": ["runtime/lib/adafruit_hid", "runtime/lib/picoflow"]
+  },
+  "hidProfiles": {
+    "absolute_mouse_keyboard": { "boot": "runtime/boot_abs_mouse.py" }
+  },
+  "comment": "hidProfiles.digitizer_keyboard (boot_digitizer.py) exists later; not shipped in this PR."
+}

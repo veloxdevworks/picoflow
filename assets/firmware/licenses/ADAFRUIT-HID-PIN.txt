@@ -1,0 +1,4 @@
+Adafruit CircuitPython HID 6.1.10
+source: https://github.com/adafruit/Adafruit_CircuitPython_HID
+tag: 6.1.10
+revision: 693baa60eb684bb53379d98c6a036f56b8010666
