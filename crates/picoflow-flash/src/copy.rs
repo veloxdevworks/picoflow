@@ -11,16 +11,18 @@ use crate::volume::VolumeKind;
 
 /// POSIX create/truncate/write/fsync/close of `bytes` to `dest`.
 ///
-/// After every byte has been handed to the kernel, dest vanished (`EIO` /
-/// `ENOENT`, or the path is gone) is **success** — the RP2040 UF2 bootloader
-/// unmounts `RPI-RP2` as soon as the image is accepted.
+/// After every byte has been handed to the kernel, dest vanished is **success**
+/// for [`VolumeKind::RpiRp2`] (`EIO`/`ENOENT`, even if a stale `exists` check
+/// still sees the path) — the RP2040 UF2 bootloader unmounts `RPI-RP2` as soon
+/// as the image is accepted. CIRCUITPY / generic dests only treat a gone path
+/// as success; `EIO` while the dest still exists is propagated.
 ///
 /// Skip xattr strip when `kind` is [`VolumeKind::RpiRp2`]. CIRCUITPY / generic
 /// dests get a best-effort strip (`ENOATTR` ignored).
 pub fn write_file_bytes(dest: &Path, bytes: &[u8], kind: VolumeKind) -> io::Result<()> {
     unlink_apple_double_best_effort(dest);
 
-    let result = posix_write(dest, bytes);
+    let result = posix_write(dest, bytes, kind);
 
     if result.is_ok() && kind != VolumeKind::RpiRp2 && dest.exists() {
         strip_xattrs_best_effort(dest);
@@ -29,7 +31,7 @@ pub fn write_file_bytes(dest: &Path, bytes: &[u8], kind: VolumeKind) -> io::Resu
     result
 }
 
-fn posix_write(dest: &Path, bytes: &[u8]) -> io::Result<()> {
+fn posix_write(dest: &Path, bytes: &[u8], kind: VolumeKind) -> io::Result<()> {
     let mut opts = OpenOptions::new();
     opts.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -44,7 +46,7 @@ fn posix_write(dest: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Err(e) = write_res {
         let exists = dest.exists();
         drop(file);
-        return classify_write_outcome(Err(e), written, bytes.len(), exists);
+        return classify_write_outcome(Err(e), written, bytes.len(), exists, kind);
     }
 
     match file.sync_all() {
@@ -52,13 +54,13 @@ fn posix_write(dest: &Path, bytes: &[u8]) -> io::Result<()> {
         Err(e) => {
             let exists = dest.exists();
             drop(file);
-            return classify_write_outcome(Err(e), written, bytes.len(), exists);
+            return classify_write_outcome(Err(e), written, bytes.len(), exists, kind);
         }
     }
 
     match close_file(file) {
         Ok(()) => Ok(()),
-        Err(e) => classify_write_outcome(Err(e), written, bytes.len(), dest.exists()),
+        Err(e) => classify_write_outcome(Err(e), written, bytes.len(), dest.exists(), kind),
     }
 }
 
@@ -83,21 +85,28 @@ fn write_all_counted(file: &mut File, bytes: &[u8]) -> (usize, io::Result<()>) {
     (written, Ok(()))
 }
 
-/// Dest vanished after a full-byte write is success (`EIO`/`ENOENT`, or gone).
+/// Full-byte write then dest gone is always success. `EIO`/`ENOENT` while the
+/// path still exists is success only for [`VolumeKind::RpiRp2`].
 fn classify_write_outcome(
     op: io::Result<()>,
     written: usize,
     total: usize,
     dest_exists: bool,
+    kind: VolumeKind,
 ) -> io::Result<()> {
     match op {
         Ok(()) => Ok(()),
         Err(err) => {
-            if written >= total && (is_vanished_io(&err) || !dest_exists) {
-                Ok(())
-            } else {
-                Err(err)
+            if written < total {
+                return Err(err);
             }
+            if !dest_exists {
+                return Ok(());
+            }
+            if kind == VolumeKind::RpiRp2 && is_vanished_io(&err) {
+                return Ok(());
+            }
+            Err(err)
         }
     }
 }
@@ -211,31 +220,48 @@ mod tests {
     #[test]
     fn dest_vanished_enoent_after_full_write_is_success() {
         let err = io::Error::from_raw_os_error(libc::ENOENT);
-        classify_write_outcome(Err(err), 16, 16, false).expect("ENOENT after full write");
+        classify_write_outcome(Err(err), 16, 16, false, VolumeKind::RpiRp2)
+            .expect("ENOENT after full write");
     }
 
     #[test]
-    fn dest_vanished_eio_after_full_write_is_success() {
+    fn rpirp2_eio_after_full_write_is_success_even_if_dest_exists() {
         let err = io::Error::from_raw_os_error(libc::EIO);
-        classify_write_outcome(Err(err), 16, 16, true).expect("EIO after full write");
+        classify_write_outcome(Err(err), 16, 16, true, VolumeKind::RpiRp2)
+            .expect("RpiRp2 EIO after full write");
+    }
+
+    #[test]
+    fn circuitpy_eio_after_full_write_with_dest_is_error() {
+        let err = io::Error::from_raw_os_error(libc::EIO);
+        let out = classify_write_outcome(Err(err), 16, 16, true, VolumeKind::Circuitpy);
+        assert!(out.is_err(), "CIRCUITPY EIO with dest present must fail");
+    }
+
+    #[test]
+    fn circuitpy_full_write_dest_gone_is_ok() {
+        let err = io::Error::from_raw_os_error(libc::EIO);
+        classify_write_outcome(Err(err), 16, 16, false, VolumeKind::Circuitpy)
+            .expect("CIRCUITPY dest gone is success");
     }
 
     #[test]
     fn partial_write_then_vanish_is_error() {
         let err = io::Error::from_raw_os_error(libc::EIO);
-        let out = classify_write_outcome(Err(err), 4, 16, false);
+        let out = classify_write_outcome(Err(err), 4, 16, false, VolumeKind::RpiRp2);
         assert!(out.is_err(), "partial write must not count as success");
     }
 
     #[test]
     fn full_write_other_error_with_dest_is_error() {
         let err = io::Error::new(io::ErrorKind::PermissionDenied, "nope");
-        assert!(classify_write_outcome(Err(err), 16, 16, true).is_err());
+        assert!(classify_write_outcome(Err(err), 16, 16, true, VolumeKind::Circuitpy).is_err());
     }
 
     #[test]
     fn full_write_other_error_dest_gone_is_ok() {
         let err = io::Error::new(io::ErrorKind::PermissionDenied, "nope");
-        classify_write_outcome(Err(err), 16, 16, false).expect("gone dest is success");
+        classify_write_outcome(Err(err), 16, 16, false, VolumeKind::Circuitpy)
+            .expect("gone dest is success");
     }
 }

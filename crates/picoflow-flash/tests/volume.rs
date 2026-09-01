@@ -71,6 +71,39 @@ fn circuitpy_reads_picoflow_json_rpirp2_does_not() {
 }
 
 #[test]
+fn picoflow_cache_evicts_when_volume_dir_disappears() {
+    let root = tempdir().unwrap();
+    let circuitpy = root.path().join(LABEL_CIRCUITPY);
+    fs::create_dir(&circuitpy).unwrap();
+    let json = circuitpy.join("picoflow.json");
+    let identity_a = r#"{"runtime_version":"0.1.0","hid_profile":"absolute_mouse_keyboard"}"#;
+    fs::write(&json, identity_a).unwrap();
+    let mtime = fs::metadata(&json).unwrap().modified().unwrap();
+
+    let first = list_pico_volumes_with(&DirVolumeSource::new(root.path())).unwrap();
+    assert_eq!(first[0].picoflow.as_ref().unwrap().runtime_version, "0.1.0");
+
+    fs::remove_dir_all(&circuitpy).unwrap();
+    let gone = list_pico_volumes_with(&DirVolumeSource::new(root.path())).unwrap();
+    assert!(gone.is_empty());
+
+    fs::create_dir(&circuitpy).unwrap();
+    // Same length as identity_a so mtime+len would hit a stale cache if not evicted.
+    fs::write(
+        &json,
+        r#"{"runtime_version":"0.2.0","hid_profile":"absolute_mouse_keyboard"}"#,
+    )
+    .unwrap();
+    fs::File::open(&json).unwrap().set_modified(mtime).unwrap();
+
+    let second = list_pico_volumes_with(&DirVolumeSource::new(root.path())).unwrap();
+    assert_eq!(
+        second[0].picoflow.as_ref().unwrap().runtime_version,
+        "0.2.0"
+    );
+}
+
+#[test]
 fn invalid_picoflow_json_is_null_volume_still_listed() {
     let root = tempdir().unwrap();
     let circuitpy = root.path().join(LABEL_CIRCUITPY);

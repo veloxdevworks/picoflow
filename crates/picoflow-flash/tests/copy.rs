@@ -48,10 +48,15 @@ fn circuitpy_strips_quarantine_rpirp2_skips_strip() {
     fs::write(&uf2, b"seed").unwrap();
     set_quarantine(&uf2);
     assert!(has_quarantine(&uf2));
+    let truncate_kept = truncate_preserves_quarantine(dir.path());
     write_file_bytes(&uf2, PAYLOAD, VolumeKind::RpiRp2).unwrap();
-    // Truncate may keep xattrs; skip-strip must not be required to clear them.
-    // The dest must still not grow an AppleDouble sidecar.
     assert_eq!(fs::read(&uf2).unwrap(), PAYLOAD);
+    if truncate_kept {
+        assert!(
+            has_quarantine(&uf2),
+            "RpiRp2 must skip xattr strip when truncate keeps xattrs"
+        );
+    }
     assert_no_apple_double(dir.path());
 
     let code = dir.path().join("code.py");
@@ -92,6 +97,21 @@ fn assert_no_quarantine(path: &Path) {
 #[cfg(target_os = "macos")]
 fn has_quarantine(path: &Path) -> bool {
     xattr_len(path, "com.apple.quarantine").is_some()
+}
+
+#[cfg(target_os = "macos")]
+fn truncate_preserves_quarantine(dir: &Path) -> bool {
+    let probe = dir.join("xattr-probe");
+    fs::write(&probe, b"seed").unwrap();
+    set_quarantine(&probe);
+    let _ = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&probe)
+        .unwrap();
+    let kept = has_quarantine(&probe);
+    let _ = fs::remove_file(&probe);
+    kept
 }
 
 #[cfg(target_os = "macos")]
