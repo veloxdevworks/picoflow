@@ -14,18 +14,13 @@ macro_rules! ulid_id {
         pub struct $name(Ulid);
 
         impl $name {
+            #[allow(clippy::new_without_default)]
             pub fn new() -> Self {
                 Self(Ulid::new())
             }
 
             pub fn as_ulid(self) -> Ulid {
                 self.0
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
             }
         }
 

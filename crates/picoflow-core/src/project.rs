@@ -4,7 +4,7 @@ use ts_rs::TS;
 use crate::ids::{ActionId, ClipId, PhotoId};
 use crate::{ensure_version, Error};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const PROJECT_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_SETTLE_MS: u32 = 1200;
 pub const DEFAULT_BUTTON_PIN: &str = "GP15";
 pub const DEFAULT_TAP_HOLD_MS: u32 = 60;
@@ -27,15 +27,14 @@ pub(crate) fn default_settle_ms() -> u32 {
     DEFAULT_SETTLE_MS
 }
 
-/// USB HID composite profile.
+// USB HID composite profile. Additive; serde rename_all keeps new variants snake_case.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[non_exhaustive]
+#[serde(rename_all = "snake_case")]
 #[ts(export, export_to = "../../../src/types/generated.ts")]
 pub enum HidProfile {
     #[default]
-    #[serde(rename = "absolute_mouse_keyboard")]
     AbsoluteMouseKeyboard,
-    #[serde(rename = "digitizer_keyboard")]
     DigitizerKeyboard,
 }
 
@@ -168,28 +167,35 @@ pub enum ActionKind {
     Key {
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         keycode: Option<String>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         chars: Option<String>,
         #[serde(default)]
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        modifiers: Vec<Modifier>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        modifiers: Option<Vec<Modifier>>,
         #[serde(default = "default_key_hold_ms")]
         hold_ms: u32,
     },
     MouseMove {
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         x: Option<f64>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         y: Option<f64>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         dx: Option<i32>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         dy: Option<i32>,
     },
     MouseButton {
@@ -215,7 +221,8 @@ pub struct Project {
 
 pub fn parse_project(json: &str) -> Result<Project, Error> {
     let project: Project = serde_json::from_str(json)?;
-    ensure_version(project.version)?;
+    ensure_version(project.version, PROJECT_SCHEMA_VERSION)?;
+    project.validate_actions()?;
     Ok(project)
 }
 
@@ -226,31 +233,36 @@ pub fn validate_action(action: &Action) -> Result<(), Error> {
 impl ActionKind {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
-            ActionKind::Tap { x, y, .. } => validate_unit_coords(*x, *y, "tap"),
+            ActionKind::Tap { x, y, .. } => validate_tap(*x, *y),
             ActionKind::Swipe {
                 x0,
                 y0,
                 x1,
                 y1,
                 duration_ms,
-            } => {
-                validate_unit_coords(*x0, *y0, "swipe")?;
-                validate_unit_coords(*x1, *y1, "swipe")?;
-                if *duration_ms < MIN_SWIPE_DURATION_MS {
-                    return Err(Error::invalid_action(format!(
-                        "swipe duration must be at least {MIN_SWIPE_DURATION_MS} ms"
-                    )));
-                }
-                Ok(())
-            }
+            } => validate_swipe(*x0, *y0, *x1, *y1, *duration_ms),
             ActionKind::Key { keycode, chars, .. } => {
                 validate_key(keycode.as_deref(), chars.as_deref())
             }
             ActionKind::MouseMove { x, y, dx, dy } => validate_mouse_move(*x, *y, *dx, *dy),
-            ActionKind::MouseButton { .. } => Ok(()),
-            ActionKind::Wait { .. } => Ok(()),
+            ActionKind::MouseButton { .. } | ActionKind::Wait { .. } => Ok(()),
         }
     }
+}
+
+pub fn validate_tap(x: f64, y: f64) -> Result<(), Error> {
+    validate_unit_coords(x, y, "tap")
+}
+
+pub fn validate_swipe(x0: f64, y0: f64, x1: f64, y1: f64, duration_ms: u32) -> Result<(), Error> {
+    validate_unit_coords(x0, y0, "swipe")?;
+    validate_unit_coords(x1, y1, "swipe")?;
+    if duration_ms < MIN_SWIPE_DURATION_MS {
+        return Err(Error::invalid_action(format!(
+            "swipe duration must be at least {MIN_SWIPE_DURATION_MS} ms"
+        )));
+    }
+    Ok(())
 }
 
 pub fn validate_key(keycode: Option<&str>, chars: Option<&str>) -> Result<(), Error> {

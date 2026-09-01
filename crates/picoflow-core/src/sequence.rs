@@ -2,12 +2,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::project::{
-    validate_key, validate_mouse_move, validate_unit_coords, HidProfile, Modifier, MouseButton,
-    MouseOp, RunMode, MIN_SWIPE_DURATION_MS,
+    validate_key, validate_mouse_move, validate_swipe, validate_tap, HidProfile, Modifier,
+    MouseButton, MouseOp, RunMode,
 };
 use crate::{ensure_version, Error};
 
-/// On-device `sequence.json` v1 (snake_case).
+pub const SEQUENCE_SCHEMA_VERSION: u32 = 1;
+
+// On-device `sequence.json` v1 (snake_case).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/types/generated.ts")]
 pub struct Sequence {
@@ -51,28 +53,35 @@ pub enum EventKind {
     Key {
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         keycode: Option<String>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         chars: Option<String>,
         #[serde(default)]
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        modifiers: Vec<Modifier>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        modifiers: Option<Vec<Modifier>>,
         #[serde(default = "crate::project::default_key_hold_ms")]
         hold_ms: u32,
     },
     MouseMove {
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         x: Option<f64>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         y: Option<f64>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         dx: Option<i32>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         dy: Option<i32>,
     },
     MouseButton {
@@ -86,7 +95,8 @@ pub enum EventKind {
 
 pub fn parse_sequence(json: &str) -> Result<Sequence, Error> {
     let sequence: Sequence = serde_json::from_str(json)?;
-    ensure_version(sequence.version)?;
+    ensure_version(sequence.version, SEQUENCE_SCHEMA_VERSION)?;
+    sequence.validate_events()?;
     Ok(sequence)
 }
 
@@ -99,29 +109,19 @@ impl SequenceEvent {
 impl EventKind {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
-            EventKind::Tap { x, y, .. } => validate_unit_coords(*x, *y, "tap"),
+            EventKind::Tap { x, y, .. } => validate_tap(*x, *y),
             EventKind::Swipe {
                 x0,
                 y0,
                 x1,
                 y1,
                 duration_ms,
-            } => {
-                validate_unit_coords(*x0, *y0, "swipe")?;
-                validate_unit_coords(*x1, *y1, "swipe")?;
-                if *duration_ms < MIN_SWIPE_DURATION_MS {
-                    return Err(Error::invalid_action(format!(
-                        "swipe duration must be at least {MIN_SWIPE_DURATION_MS} ms"
-                    )));
-                }
-                Ok(())
-            }
+            } => validate_swipe(*x0, *y0, *x1, *y1, *duration_ms),
             EventKind::Key { keycode, chars, .. } => {
                 validate_key(keycode.as_deref(), chars.as_deref())
             }
             EventKind::MouseMove { x, y, dx, dy } => validate_mouse_move(*x, *y, *dx, *dy),
-            EventKind::MouseButton { .. } => Ok(()),
-            EventKind::Wait { .. } => Ok(()),
+            EventKind::MouseButton { .. } | EventKind::Wait { .. } => Ok(()),
         }
     }
 }

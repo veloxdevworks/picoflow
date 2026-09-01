@@ -1,4 +1,4 @@
-//! Project, sequence, and timeline types.
+//! Project and sequence types.
 
 mod ids;
 mod project;
@@ -6,12 +6,12 @@ mod sequence;
 
 pub use ids::{ActionId, ClipId, PhotoId};
 pub use project::{
-    parse_project, validate_action, validate_key, validate_mouse_move, Action, ActionKind, Clip,
-    HidProfile, Modifier, MouseButton, MouseOp, Photo, Point, Project, RunMode, Target,
-    DEFAULT_BUTTON_PIN, DEFAULT_KEY_HOLD_MS, DEFAULT_SETTLE_MS, DEFAULT_TAP_HOLD_MS,
-    MIN_SWIPE_DURATION_MS, SCHEMA_VERSION,
+    parse_project, validate_action, validate_key, validate_mouse_move, validate_swipe,
+    validate_tap, Action, ActionKind, Clip, HidProfile, Modifier, MouseButton, MouseOp, Photo,
+    Point, Project, RunMode, Target, DEFAULT_BUTTON_PIN, DEFAULT_KEY_HOLD_MS, DEFAULT_SETTLE_MS,
+    DEFAULT_TAP_HOLD_MS, MIN_SWIPE_DURATION_MS, PROJECT_SCHEMA_VERSION,
 };
-pub use sequence::{parse_sequence, EventKind, Sequence, SequenceEvent};
+pub use sequence::{parse_sequence, EventKind, Sequence, SequenceEvent, SEQUENCE_SCHEMA_VERSION};
 
 /// Errors from parse, version checks, and action validation.
 #[derive(Debug, thiserror::Error)]
@@ -30,11 +30,11 @@ impl Error {
     }
 }
 
-pub fn ensure_version(version: u32) -> Result<(), Error> {
-    if version != SCHEMA_VERSION {
+pub fn ensure_version(version: u32, expected: u32) -> Result<(), Error> {
+    if version != expected {
         Err(Error::UnsupportedVersion {
             found: version,
-            expected: SCHEMA_VERSION,
+            expected,
         })
     } else {
         Ok(())
