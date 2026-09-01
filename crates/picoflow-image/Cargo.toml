@@ -1,0 +1,5 @@
+[package]
+name = "picoflow-image"
+version = "0.1.0"
+edition = "2021"
+description = "Photo decode, screen-quad detect, and warp for PicoFlow"

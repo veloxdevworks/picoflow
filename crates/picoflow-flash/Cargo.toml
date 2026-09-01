@@ -1,0 +1,5 @@
+[package]
+name = "picoflow-flash"
+version = "0.1.0"
+edition = "2021"
+description = "Pico volume detection and byte-copy flash for PicoFlow"

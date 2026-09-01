@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+  "src-tauri",
+  "crates/picoflow-core",
+  "crates/picoflow-image",
+  "crates/picoflow-flash",
+]

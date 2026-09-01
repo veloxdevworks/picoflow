@@ -1,0 +1,21 @@
+use std::path::PathBuf;
+
+/// Session-scoped path sandbox used by later commands.
+///
+/// Commands must only touch `project_dir`, paths from the last native dialog,
+/// and volumes from the last scan.
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct Session {
+    pub project_dir: Option<PathBuf>,
+    pub last_dialog_paths: Vec<PathBuf>,
+    pub last_volumes: Vec<LastVolume>,
+}
+
+/// Volume identity remembered from the last `list_pico_volumes` scan.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct LastVolume {
+    pub id: String,
+    pub path: PathBuf,
+}
