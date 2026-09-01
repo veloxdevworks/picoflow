@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "run_mode": "auto",
+  "settle_ms": 1200,
+  "hid_profile": "absolute_mouse_keyboard",
+  "button_pin": "GP15",
+  "events": [
+    {
+      "at_ms": 1800,
+      "type": "tap",
+      "x": 0.52,
+      "y": 0.81,
+      "hold_ms": 60
+    },
+    {
+      "at_ms": 2600,
+      "type": "swipe",
+      "x0": 0.8,
+      "y0": 0.5,
+      "x1": 0.2,
+      "y1": 0.5,
+      "duration_ms": 400
+    },
+    {
+      "at_ms": 4200,
+      "type": "key",
+      "chars": "ok",
+      "hold_ms": 50
+    },
+    {
+      "at_ms": 5000,
+      "type": "mouse_move",
+      "x": 0.5,
+      "y": 0.5
+    },
+    {
+      "at_ms": 5100,
+      "type": "mouse_move",
+      "dx": 12,
+      "dy": -4
+    },
+    {
+      "at_ms": 5600,
+      "type": "mouse_button",
+      "button": "left",
+      "op": "click"
+    },
+    {
+      "at_ms": 6200,
+      "type": "wait",
+      "duration_ms": 300
+    }
+  ]
+}

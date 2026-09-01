@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "name": "Android tablet OOBE",
+  "target": {
+    "hidProfile": "absolute_mouse_keyboard",
+    "runMode": "auto",
+    "settleMs": 1200,
+    "buttonPin": "GP15"
+  },
+  "photos": [
+    {
+      "id": "01M1FDF09T000EJZKZA8CK8SR0",
+      "rawPath": "photos/raw/01M1FDF09T000EJZKZA8CK8SR0.jpg",
+      "warpedPath": "photos/warped/01M1FDF09T000EJZKZA8CK8SR0.png",
+      "corners": [
+        { "x": 120.0, "y": 80.0 },
+        { "x": 1900.0, "y": 90.0 },
+        { "x": 1888.0, "y": 1100.0 },
+        { "x": 130.0, "y": 1088.0 }
+      ],
+      "normalized": true,
+      "width": 2048,
+      "height": 1536,
+      "warpedWidth": 1600,
+      "warpedHeight": 1000
+    }
+  ],
+  "clips": [
+    {
+      "id": "01M1FDF09T000FDT4HY97S6X81",
+      "photoId": "01M1FDF09T000EJZKZA8CK8SR0",
+      "startMs": 0,
+      "durationMs": 8000
+    }
+  ],
+  "actions": [
+    {
+      "id": "01M1FDF09T0003ZGB5Y17A5182",
+      "atMs": 1800,
+      "type": "tap",
+      "x": 0.52,
+      "y": 0.81,
+      "holdMs": 60
+    },
+    {
+      "id": "01M1FDF09T0008BND1MW6JQNG3",
+      "atMs": 2600,
+      "type": "swipe",
+      "x0": 0.8,
+      "y0": 0.5,
+      "x1": 0.2,
+      "y1": 0.5,
+      "durationMs": 400
+    },
+    {
+      "id": "01M1FDF09T00037GHHC52ZMW04",
+      "atMs": 4200,
+      "type": "key",
+      "keycode": "ENTER",
+      "holdMs": 50
+    },
+    {
+      "id": "01M1FDF09T000147T6G18QV9R5",
+      "atMs": 5000,
+      "type": "mouse_move",
+      "x": 0.5,
+      "y": 0.5
+    },
+    {
+      "id": "01M1FDF09T0003XRHQ7KYEZ3G6",
+      "atMs": 5600,
+      "type": "mouse_button",
+      "button": "left",
+      "op": "click"
+    },
+    {
+      "id": "01M1FDF09T00043XXYR3PGER07",
+      "atMs": 6200,
+      "type": "wait",
+      "durationMs": 300
+    }
+  ]
+}

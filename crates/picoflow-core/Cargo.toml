@@ -3,3 +3,10 @@ name = "picoflow-core"
 version = "0.1.0"
 edition = "2021"
 description = "Project, sequence, and timeline types for PicoFlow"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+ts-rs = { version = "10.1", features = ["no-serde-warnings"] }
+ulid = { version = "1", features = ["serde"] }
