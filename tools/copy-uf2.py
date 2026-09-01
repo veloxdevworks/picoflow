@@ -4,14 +4,24 @@
 from __future__ import annotations
 
 import argparse
-import errno
 import os
 import sys
 
-VANISH_ERRNOS = (errno.ENOENT, errno.EIO, errno.ENODEV)
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _RUNTIME = os.path.normpath(os.path.join(_HERE, "..", "assets", "firmware", "runtime"))
+
+
+def _path_gone(path):
+    """True if dest or its parent volume is gone (RPI-RP2 unmount)."""
+    try:
+        if not os.path.exists(path):
+            return True
+        parent = os.path.dirname(path)
+        if parent and not os.path.exists(parent):
+            return True
+        return False
+    except OSError:
+        return True
 
 
 def write_file_bytes(dest, data):
@@ -28,6 +38,7 @@ def write_file_bytes(dest, data):
 
     written = 0
     fd = None
+    error = None
     try:
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
         view = memoryview(data)
@@ -38,16 +49,20 @@ def write_file_bytes(dest, data):
             written += n
         os.fsync(fd)
     except OSError as exc:
-        if written == len(data) and exc.errno in VANISH_ERRNOS:
-            return True
-        raise
+        error = exc
     finally:
+        # Never let close() override a pending result (unmount often raises ENXIO/EBADF).
         if fd is not None:
             try:
                 os.close(fd)
-            except OSError as exc:
-                if exc.errno not in VANISH_ERRNOS:
-                    raise
+            except OSError as close_exc:
+                if error is None:
+                    error = close_exc
+
+    if written == len(data) and (error is None or _path_gone(dest)):
+        return True
+    if error is not None:
+        raise error
     return True
 
 
@@ -79,7 +94,7 @@ def copy_tree_files(src_dir, dest_dir):
 
 
 def install_runtime(circuitpy, runtime_dir=_RUNTIME):
-    """Write runtime onto CIRCUITPY: lib/ → identity → sequence → boot.py → code.py last."""
+    """Write runtime onto CIRCUITPY: lib/ → identity → sequence → boot.py → markers → code.py last."""
     lib_src = os.path.join(runtime_dir, "lib")
     if os.path.isdir(lib_src):
         copy_tree_files(lib_src, os.path.join(circuitpy, "lib"))
@@ -89,12 +104,12 @@ def install_runtime(circuitpy, runtime_dir=_RUNTIME):
         os.path.join(circuitpy, "sequence.json"),
     )
     copy_file(os.path.join(runtime_dir, "boot_abs_mouse.py"), os.path.join(circuitpy, "boot.py"))
-    copy_file(os.path.join(runtime_dir, "code.py"), os.path.join(circuitpy, "code.py"))
     write_file_bytes(os.path.join(circuitpy, ".metadata_never_index"), b"")
     fse = os.path.join(circuitpy, ".fseventsd")
     if not os.path.isdir(fse):
         os.makedirs(fse, exist_ok=True)
     write_file_bytes(os.path.join(fse, "no_log"), b"")
+    copy_file(os.path.join(runtime_dir, "code.py"), os.path.join(circuitpy, "code.py"))
 
 
 def main(argv=None):

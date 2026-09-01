@@ -57,6 +57,26 @@ def test_load_sorts_by_at_ms(tmp_path):
     assert [e["at_ms"] for e in seq.events] == [10, 50]
 
 
+def test_load_rejects_unknown_version(tmp_path):
+    path = tmp_path / "sequence.json"
+    path.write_text('{"version":2,"events":[]}')
+    try:
+        load(str(path))
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "unsupported sequence version" in str(exc)
+
+
+def test_code_py_unknown_version_idles(tmp_path, capsys):
+    path = tmp_path / "sequence.json"
+    path.write_text('{"version":2,"events":[]}')
+    code = _load_code_module()
+    result = code.main(path=str(path), idle=False)
+    captured = capsys.readouterr()
+    assert result is None
+    assert "sequence load failed" in captured.out
+
+
 def test_invalid_json_does_not_raise(tmp_path, capsys):
     bad = tmp_path / "sequence.json"
     bad.write_text("{")

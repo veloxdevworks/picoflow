@@ -15,6 +15,10 @@ def apply():
 
     pin = digitalio.DigitalInOut(getattr(board, AUTHOR_PIN))
     pin.switch_to_input(pull=digitalio.Pull.UP)
-    # Held to GND at plug-in = author mode; keep the drive.
-    if pin.value:
-        storage.disable_usb_drive()
+    try:
+        # Held to GND at plug-in = author mode; keep the drive.
+        if pin.value:
+            storage.disable_usb_drive()
+    finally:
+        # Release so code.py wait_button can claim GP15.
+        pin.deinit()
