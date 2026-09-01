@@ -53,7 +53,8 @@
   "atMs": 2000,
   "durationMs": 500,
   "expected": {
-    "clipDurations": [4000, 4000],
+    "clipDurations": [4500, 4000],
+    "clipStarts": [0, 4500],
     "actionAtMs": {
       "01M1FDF09T0003ZGB5Y17A5182": 1000,
       "01M1FDF09T0008BND1MW6JQNG3": 3500,

@@ -163,6 +163,8 @@ struct InsertWaitFixture {
 struct InsertWaitExpected {
     #[serde(rename = "clipDurations")]
     clip_durations: Vec<u32>,
+    #[serde(rename = "clipStarts")]
+    clip_starts: Vec<u32>,
     #[serde(rename = "actionAtMs")]
     action_at_ms: std::collections::HashMap<String, u32>,
     #[serde(rename = "waitAtMs")]
@@ -354,6 +356,9 @@ fn insert_wait_ripples_later_actions() {
     for (clip, duration) in result.clips.iter().zip(&fixture.expected.clip_durations) {
         assert_eq!(clip.duration_ms, *duration);
     }
+    for (clip, start) in result.clips.iter().zip(&fixture.expected.clip_starts) {
+        assert_eq!(clip.start_ms, *start);
+    }
     for (id, at_ms) in &fixture.expected.action_at_ms {
         assert_eq!(action_at(&result, id), *at_ms);
     }
@@ -378,15 +383,61 @@ fn insert_wait_extends_clip_when_wait_would_fall_off() {
         vec![tap(ACT_1, 1000)],
     );
     let result = insert_wait(p, 8000, 500).expect("wait at end");
-    assert!(result.clips[1].duration_ms >= 4500);
+    assert_eq!(result.clips[0].duration_ms, 4000);
+    assert_eq!(result.clips[1].duration_ms, 4500);
+    assert_eq!(result.clips[1].start_ms, 4000);
+    assert_eq!(action_at(&result, ACT_1), 1000);
     let wait = result
         .actions
         .iter()
         .find(|action| matches!(action.kind, ActionKind::Wait { .. }))
         .expect("wait");
+    assert_eq!(wait.at_ms, 8000);
     let owner = clip_at(&result.clips, wait.at_ms).expect("wait on a clip");
     assert_eq!(owner.id, id_clip(CLIP_B));
     assert!(wait.at_ms < owner.start_ms + owner.duration_ms);
+}
+
+#[test]
+fn insert_wait_overflow_ripple_does_not_clamp() {
+    let p = project(vec![clip(CLIP_A, 0, 4000)], vec![tap(ACT_1, 3500)]);
+    let result = insert_wait(p, 1000, 1000).expect("wait");
+    assert_eq!(result.clips[0].duration_ms, 5000);
+    assert_eq!(action_at(&result, ACT_1), 4500);
+    let tap_owner = clip_at(&result.clips, 4500).expect("tap on a clip");
+    assert_eq!(tap_owner.id, id_clip(CLIP_A));
+    let wait = result
+        .actions
+        .iter()
+        .find(|action| matches!(action.kind, ActionKind::Wait { .. }))
+        .expect("wait");
+    assert_eq!(wait.at_ms, 1000);
+}
+
+#[test]
+fn insert_wait_keeps_later_clip_offsets() {
+    let p = project(
+        vec![clip(CLIP_A, 0, 4000), clip(CLIP_B, 4000, 4000)],
+        vec![tap(ACT_1, 3500), tap(ACT_2, 7500)],
+    );
+    let result = insert_wait(p, 1000, 1000).expect("wait");
+    assert_eq!(clip_by_id(&result, CLIP_A).duration_ms, 5000);
+    assert_eq!(clip_by_id(&result, CLIP_B).start_ms, 5000);
+    assert_eq!(clip_by_id(&result, CLIP_B).duration_ms, 4000);
+    assert_eq!(action_at(&result, ACT_1), 4500);
+    assert_eq!(action_at(&result, ACT_2), 8500);
+    assert_eq!(
+        clip_at(&result.clips, action_at(&result, ACT_1))
+            .expect("same-clip tap")
+            .id,
+        id_clip(CLIP_A)
+    );
+    assert_eq!(
+        clip_at(&result.clips, action_at(&result, ACT_2))
+            .expect("later-clip tap")
+            .id,
+        id_clip(CLIP_B)
+    );
 }
 
 #[test]

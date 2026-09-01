@@ -186,7 +186,8 @@ pub fn reorder_clips(mut project: Project, ordered_clip_ids: &[ClipId]) -> Resul
 
 /// Insert a wait keyframe at `at_ms` and shift later actions by `duration_ms`.
 ///
-/// Extends the owning clip when the wait would otherwise fall off its end.
+/// Always grows the owning clip by `duration_ms` so later in-clip offsets stay
+/// stable, then grows further if the wait would still fall off the end.
 pub fn insert_wait(mut project: Project, at_ms: u32, duration_ms: u32) -> Result<Project, Error> {
     let Some(owner_id) = clip_at(&project.clips, at_ms).map(|clip| clip.id) else {
         return Err(Error::invalid_timeline(
@@ -208,12 +209,9 @@ pub fn insert_wait(mut project: Project, at_ms: u32, duration_ms: u32) -> Result
     });
 
     let clip = &mut project.clips[owner_idx];
-    let end = clip_end_ms(clip);
-    if at_ms >= end {
-        let min_to_include_wait = at_ms.saturating_sub(clip.start_ms).saturating_add(1);
-        let grown = clip.duration_ms.saturating_add(duration_ms);
-        clip.duration_ms = min_to_include_wait.max(grown).max(MIN_CLIP_DURATION_MS);
-    }
+    let grown = clip.duration_ms.saturating_add(duration_ms);
+    let min_to_include_wait = at_ms.saturating_sub(clip.start_ms).saturating_add(1);
+    clip.duration_ms = grown.max(min_to_include_wait).max(MIN_CLIP_DURATION_MS);
 
     pack_clips(&mut project.clips);
     clamp_actions_to_timeline(&mut project);
