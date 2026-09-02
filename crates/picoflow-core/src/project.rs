@@ -10,6 +10,9 @@ pub const DEFAULT_BUTTON_PIN: &str = "GP15";
 pub const DEFAULT_TAP_HOLD_MS: u32 = 60;
 pub const DEFAULT_KEY_HOLD_MS: u32 = 50;
 pub const MIN_SWIPE_DURATION_MS: u32 = 16;
+/// Default tablet surface in pixels. Omitted `target.width`/`height` load as this.
+pub const DEFAULT_TARGET_WIDTH: u32 = 1920;
+pub const DEFAULT_TARGET_HEIGHT: u32 = 1080;
 
 pub(crate) fn default_tap_hold_ms() -> u32 {
     DEFAULT_TAP_HOLD_MS
@@ -25,6 +28,14 @@ pub(crate) fn default_button_pin() -> String {
 
 pub(crate) fn default_settle_ms() -> u32 {
     DEFAULT_SETTLE_MS
+}
+
+pub(crate) fn default_target_width() -> u32 {
+    DEFAULT_TARGET_WIDTH
+}
+
+pub(crate) fn default_target_height() -> u32 {
+    DEFAULT_TARGET_HEIGHT
 }
 
 // USB HID composite profile. Additive; serde rename_all keeps new variants snake_case.
@@ -95,6 +106,10 @@ pub struct Target {
     pub settle_ms: u32,
     #[serde(default = "default_button_pin")]
     pub button_pin: String,
+    #[serde(default = "default_target_width")]
+    pub width: u32,
+    #[serde(default = "default_target_height")]
+    pub height: u32,
 }
 
 impl Default for Target {
@@ -104,7 +119,27 @@ impl Default for Target {
             run_mode: RunMode::default(),
             settle_ms: DEFAULT_SETTLE_MS,
             button_pin: default_button_pin(),
+            width: DEFAULT_TARGET_WIDTH,
+            height: DEFAULT_TARGET_HEIGHT,
         }
+    }
+}
+
+impl Target {
+    /// Positive tablet pixels, falling back to 1920×1080 if a value is 0.
+    pub fn tablet_size(&self) -> (u32, u32) {
+        (
+            if self.width > 0 {
+                self.width
+            } else {
+                DEFAULT_TARGET_WIDTH
+            },
+            if self.height > 0 {
+                self.height
+            } else {
+                DEFAULT_TARGET_HEIGHT
+            },
+        )
     }
 }
 
@@ -116,6 +151,10 @@ pub struct Photo {
     pub raw_path: String,
     pub warped_path: Option<String>,
     pub corners: Option<[Point; 4]>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub detect_confidence: Option<f64>,
     pub normalized: bool,
     pub width: u32,
     pub height: u32,

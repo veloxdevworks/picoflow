@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use image::{imageops, RgbImage};
 use imageproc::contours::{find_contours, BorderType};
 use imageproc::edges::canny;
@@ -40,7 +42,7 @@ pub fn detect_screen_quad(image: &RgbImage) -> DetectResult {
     }
 
     let (work, scale_x, scale_y) = downscale(image);
-    let gray = imageops::grayscale(&work);
+    let gray = imageops::grayscale(work.as_ref());
     let blurred = gaussian_blur_f32(&gray, BLUR_SIGMA);
     let edges = canny(&blurred, CANNY_LOW, CANNY_HIGH);
 
@@ -90,19 +92,19 @@ pub fn detect_screen_quad(image: &RgbImage) -> DetectResult {
     }
 }
 
-fn downscale(image: &RgbImage) -> (RgbImage, f64, f64) {
+fn downscale(image: &RgbImage) -> (Cow<'_, RgbImage>, f64, f64) {
     let w = image.width();
     let h = image.height();
     let long = w.max(h);
     if long <= DETECT_LONG_EDGE {
-        return (image.clone(), 1.0, 1.0);
+        return (Cow::Borrowed(image), 1.0, 1.0);
     }
     let scale = f64::from(DETECT_LONG_EDGE) / f64::from(long);
     let nw = (f64::from(w) * scale).round().max(1.0) as u32;
     let nh = (f64::from(h) * scale).round().max(1.0) as u32;
     let resized = imageops::resize(image, nw, nh, imageops::FilterType::Triangle);
     (
-        resized,
+        Cow::Owned(resized),
         f64::from(w) / f64::from(nw),
         f64::from(h) / f64::from(nh),
     )
@@ -435,4 +437,31 @@ fn perpendicular_distance(p: Point, a: Point, b: Point) -> f64 {
         return p.dist(a);
     }
     ((p.x - a.x) * dy - (p.y - a.y) * dx).abs() / len
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Rgb;
+
+    #[test]
+    fn downscale_borrows_when_already_within_long_edge() {
+        let img = RgbImage::from_pixel(100, 80, Rgb([1, 2, 3]));
+        let (work, scale_x, scale_y) = downscale(&img);
+        assert_eq!(scale_x, 1.0);
+        assert_eq!(scale_y, 1.0);
+        assert!(matches!(work, Cow::Borrowed(_)));
+        assert_eq!(work.width(), 100);
+        assert_eq!(work.height(), 80);
+    }
+
+    #[test]
+    fn downscale_resizes_when_longer_than_detect_edge() {
+        let img = RgbImage::from_pixel(DETECT_LONG_EDGE + 200, 400, Rgb([1, 2, 3]));
+        let (work, scale_x, scale_y) = downscale(&img);
+        assert!(matches!(work, Cow::Owned(_)));
+        assert_eq!(work.width().max(work.height()), DETECT_LONG_EDGE);
+        assert!(scale_x > 1.0);
+        assert!(scale_y > 1.0);
+    }
 }

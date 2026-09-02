@@ -1,6 +1,7 @@
 use picoflow_core::{
     parse_project, parse_sequence, validate_action, validate_key, validate_mouse_move, Action,
-    ActionKind, Error, EventKind, SequenceEvent, PROJECT_SCHEMA_VERSION, SEQUENCE_SCHEMA_VERSION,
+    ActionKind, Error, EventKind, SequenceEvent, DEFAULT_TARGET_HEIGHT, DEFAULT_TARGET_WIDTH,
+    PROJECT_SCHEMA_VERSION, SEQUENCE_SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -24,8 +25,50 @@ fn project_v1_round_trip() {
     let project = parse_project(PROJECT_V1).expect("parse project v1");
     assert_eq!(project.version, 1);
     assert_eq!(project.target.button_pin, "GP15");
+    assert_eq!(project.target.width, DEFAULT_TARGET_WIDTH);
+    assert_eq!(project.target.height, DEFAULT_TARGET_HEIGHT);
+    assert!(project.photos[0].detect_confidence.is_none());
     project.validate_actions().expect("fixture actions valid");
     assert_round_trip::<picoflow_core::Project>(PROJECT_V1);
+}
+
+/// Schema stays v1: omitted tablet size and detectConfidence must still parse.
+#[test]
+fn old_project_without_tablet_size_or_detect_confidence_loads() {
+    let mut value: serde_json::Value = serde_json::from_str(PROJECT_V1).unwrap();
+    let target = value["target"].as_object_mut().expect("target");
+    target.remove("width");
+    target.remove("height");
+    let photo = value["photos"][0].as_object_mut().expect("photo");
+    photo.remove("detectConfidence");
+    photo.remove("detectImageWidth");
+    photo.remove("detectImageHeight");
+
+    let project = parse_project(&value.to_string()).expect("legacy project.json");
+    assert_eq!(project.version, PROJECT_SCHEMA_VERSION);
+    assert_eq!(project.target.width, DEFAULT_TARGET_WIDTH);
+    assert_eq!(project.target.height, DEFAULT_TARGET_HEIGHT);
+    assert_eq!(project.target.tablet_size(), (1920, 1080));
+    assert!(project.photos[0].detect_confidence.is_none());
+    assert!(project.photos[0].corners.is_some());
+}
+
+#[test]
+fn detect_confidence_and_nondefault_tablet_round_trip() {
+    let mut value: serde_json::Value = serde_json::from_str(PROJECT_V1).unwrap();
+    value["target"]["width"] = json!(1280);
+    value["target"]["height"] = json!(800);
+    value["photos"][0]["detectConfidence"] = json!(0.42);
+    let project = parse_project(&value.to_string()).expect("extended project");
+    assert_eq!(project.target.tablet_size(), (1280, 800));
+    assert_eq!(project.photos[0].detect_confidence, Some(0.42));
+
+    let serialized = serde_json::to_value(&project).expect("serialize");
+    assert_eq!(serialized["target"]["width"], 1280);
+    assert_eq!(serialized["target"]["height"], 800);
+    assert_eq!(serialized["photos"][0]["detectConfidence"], 0.42);
+    let again = parse_project(&serialized.to_string()).expect("reparse");
+    assert_eq!(again, project);
 }
 
 #[test]

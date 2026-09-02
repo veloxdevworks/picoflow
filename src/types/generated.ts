@@ -20,7 +20,7 @@ export type MouseButton = "left" | "right" | "middle";
 
 export type MouseOp = "down" | "up" | "click";
 
-export type Photo = { id: PhotoId, rawPath: string, warpedPath: string | null, corners: [Point, Point, Point, Point] | null, normalized: boolean, width: number, height: number, warpedWidth: number | null, warpedHeight: number | null, };
+export type Photo = { id: PhotoId, rawPath: string, warpedPath: string | null, corners: [Point, Point, Point, Point] | null, detectConfidence?: number, normalized: boolean, width: number, height: number, warpedWidth: number | null, warpedHeight: number | null, };
 
 export type PhotoId = string;
 
@@ -34,4 +34,4 @@ export type Sequence = { version: number, run_mode: RunMode, settle_ms: number, 
 
 export type SequenceEvent = { at_ms: number, } & ({ "type": "tap", x: number, y: number, hold_ms: number, } | { "type": "swipe", x0: number, y0: number, x1: number, y1: number, duration_ms: number, } | { "type": "key", keycode?: string, chars?: string, modifiers?: Array<Modifier>, hold_ms: number, } | { "type": "mouse_move", x?: number, y?: number, dx?: number, dy?: number, } | { "type": "mouse_button", button: MouseButton, op: MouseOp, } | { "type": "wait", duration_ms: number, });
 
-export type Target = { hidProfile: HidProfile, runMode: RunMode, settleMs: number, buttonPin: string, };
+export type Target = { hidProfile: HidProfile, runMode: RunMode, settleMs: number, buttonPin: string, width: number, height: number, };

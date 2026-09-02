@@ -12,7 +12,8 @@ pub use project::{
     parse_project, validate_action, validate_key, validate_mouse_move, validate_swipe,
     validate_tap, Action, ActionKind, Clip, HidProfile, Modifier, MouseButton, MouseOp, Photo,
     Point, Project, RunMode, Target, DEFAULT_BUTTON_PIN, DEFAULT_KEY_HOLD_MS, DEFAULT_SETTLE_MS,
-    DEFAULT_TAP_HOLD_MS, MIN_SWIPE_DURATION_MS, PROJECT_SCHEMA_VERSION,
+    DEFAULT_TAP_HOLD_MS, DEFAULT_TARGET_HEIGHT, DEFAULT_TARGET_WIDTH, MIN_SWIPE_DURATION_MS,
+    PROJECT_SCHEMA_VERSION,
 };
 pub use sequence::{parse_sequence, EventKind, Sequence, SequenceEvent, SEQUENCE_SCHEMA_VERSION};
 pub use timeline::{

@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   clamp01,
   containRect,
+  DEFAULT_TABLET_HEIGHT,
+  DEFAULT_TABLET_WIDTH,
   insetRectangle,
   isSwipeGesture,
   pointerToImagePx,
   pointerToNormalized,
+  tabletSize,
   TAP_SLOP_PX,
 } from "./coords";
 
@@ -96,6 +99,30 @@ describe("pointerToImagePx", () => {
     expect(pointerToImagePx(1000, 1000, rect, 800, 400)).toEqual({
       x: 800,
       y: 400,
+    });
+  });
+});
+
+describe("tabletSize", () => {
+  it("uses explicit positive pixels", () => {
+    expect(tabletSize({ width: 1280, height: 800 })).toEqual({
+      width: 1280,
+      height: 800,
+    });
+  });
+
+  it("falls back to 1920×1080 when missing or zero", () => {
+    expect(tabletSize(undefined)).toEqual({
+      width: DEFAULT_TABLET_WIDTH,
+      height: DEFAULT_TABLET_HEIGHT,
+    });
+    expect(tabletSize({ width: 0, height: 0 })).toEqual({
+      width: DEFAULT_TABLET_WIDTH,
+      height: DEFAULT_TABLET_HEIGHT,
+    });
+    expect(tabletSize({ width: 2560, height: 0 })).toEqual({
+      width: 2560,
+      height: DEFAULT_TABLET_HEIGHT,
     });
   });
 });

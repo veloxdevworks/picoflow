@@ -5,7 +5,9 @@
     "hidProfile": "absolute_mouse_keyboard",
     "runMode": "auto",
     "settleMs": 1200,
-    "buttonPin": "GP15"
+    "buttonPin": "GP15",
+    "width": 1920,
+    "height": 1080
   },
   "photos": [
     {

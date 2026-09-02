@@ -114,8 +114,13 @@ export function detectScreenQuad(photoId: string): Promise<DetectResult> {
   return invoke<DetectResult>("detect_screen_quad", { photoId });
 }
 
-export function warpPhoto(photoId: string, corners: Quad): Promise<Photo> {
-  return invoke<Photo>("warp_photo", { photoId, corners });
+export function warpPhoto(
+  photoId: string,
+  corners: Quad,
+  destWidth: number,
+  destHeight: number,
+): Promise<Photo> {
+  return invoke<Photo>("warp_photo", { photoId, corners, destWidth, destHeight });
 }
 
 /** Fallback when `convertFileSrc` cannot load a project photo. */

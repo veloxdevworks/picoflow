@@ -1,16 +1,43 @@
-import type { ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Monitor } from "lucide-react";
 import { actionLabel } from "../../lib/actions";
+import { containRect, tabletSize, type Rect } from "../../lib/coords";
 import { clipAt, upcomingKeyframe } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import { ProjectPhoto } from "../photos/ProjectPhoto";
 import { TapSwipeLayer } from "./TapSwipeLayer";
+
+const EMPTY_RECT: Rect = { left: 0, top: 0, width: 0, height: 0 };
 
 export function WarpedViewer() {
   const project = useEditor((s) => s.project);
   const projectDir = useEditor((s) => s.projectDir);
   const playheadMs = useEditor((s) => s.playheadMs);
   const photoRev = useEditor((s) => s.photoRev);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageBox, setStageBox] = useState<Rect>(EMPTY_RECT);
+
+  const measure = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) {
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    setStageBox({ left: 0, top: 0, width: r.width, height: r.height });
+  }, []);
+
+  const tablet = tabletSize(project?.target);
+  useLayoutEffect(() => {
+    measure();
+    const el = stageRef.current;
+    if (!el) {
+      return;
+    }
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, tablet.width, tablet.height]);
 
   if (!project) {
     return (
@@ -39,20 +66,31 @@ export function WarpedViewer() {
     );
   }
 
-  const imageWidth = photo.warpedWidth ?? photo.width;
-  const imageHeight = photo.warpedHeight ?? photo.height;
+  const frame = containRect(stageBox, tablet.width, tablet.height);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-zinc-950">
-      <div className="relative min-h-0 flex-1">
-        <ProjectPhoto
-          projectDir={projectDir}
-          relativePath={relative}
-          alt="Clip under playhead"
-          className="h-full w-full object-contain"
-          cacheKey={String(photoRev[photo.id] ?? 0)}
-        />
-        <TapSwipeLayer imageWidth={imageWidth} imageHeight={imageHeight} />
+      <div ref={stageRef} className="relative min-h-0 flex-1">
+        {frame.width > 0 && frame.height > 0 ? (
+          <div
+            className="absolute overflow-hidden bg-zinc-950"
+            style={{
+              left: frame.left,
+              top: frame.top,
+              width: frame.width,
+              height: frame.height,
+            }}
+          >
+            <ProjectPhoto
+              projectDir={projectDir}
+              relativePath={relative}
+              alt="Clip under playhead"
+              className="h-full w-full object-contain"
+              cacheKey={String(photoRev[photo.id] ?? 0)}
+            />
+            <TapSwipeLayer imageWidth={tablet.width} imageHeight={tablet.height} />
+          </div>
+        ) : null}
       </div>
       <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] text-zinc-400">
         {upcoming

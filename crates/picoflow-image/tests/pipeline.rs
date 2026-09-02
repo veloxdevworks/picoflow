@@ -6,8 +6,9 @@ use image::{GenericImageView, Rgb, RgbImage};
 use imageproc::drawing::draw_filled_rect_mut;
 use imageproc::rect::Rect;
 use picoflow_image::{
-    decode_path, dest_size, detect_screen_quad, save_oriented, warp_quad, Error, OrientedImage,
-    Point, SourceFormat, DETECT_CONFIDENCE_THRESHOLD, MAX_WARP_LONG_EDGE,
+    decode_path, dest_size, dest_size_for_target, detect_screen_quad, save_oriented, warp_quad,
+    warp_quad_to, Error, OrientedImage, Point, SourceFormat, DETECT_CONFIDENCE_THRESHOLD,
+    MAX_WARP_LONG_EDGE,
 };
 
 fn fixtures_dir() -> PathBuf {
@@ -132,6 +133,34 @@ fn synthetic_rectangle_detects_with_high_confidence() {
     );
 }
 
+/// Long-edge 1600 forces the detect downscale path (DETECT_LONG_EDGE is 1280).
+#[test]
+fn large_synthetic_rectangle_still_detects() {
+    let mut img = RgbImage::from_pixel(1600, 1200, Rgb([18, 18, 22]));
+    let rect = Rect::at(240, 160).of_size(1120, 880);
+    draw_filled_rect_mut(&mut img, rect, Rgb([236, 240, 244]));
+    let expected = [
+        Point::new(240.0, 160.0),
+        Point::new(1359.0, 160.0),
+        Point::new(1359.0, 1039.0),
+        Point::new(240.0, 1039.0),
+    ];
+    let result = detect_screen_quad(&img);
+    assert!(
+        result.confidence >= 0.7,
+        "confidence {} < 0.7 after downscale, corners {:?}",
+        result.confidence,
+        result.corners
+    );
+    let err = max_corner_error(&result.corners, &expected);
+    assert!(
+        err <= 8.0,
+        "downscaled corners {:?} off by {err} px from {:?}",
+        result.corners,
+        expected
+    );
+}
+
 fn assert_red_right_column(img: &RgbImage) {
     assert_eq!(img.dimensions(), (80, 40));
     for y in 0..40 {
@@ -235,6 +264,15 @@ fn warp_clamps_long_edge_and_samples() {
     assert_eq!(out.dimensions(), (w, h));
     let mid = out.get_pixel(w / 2, h / 2).0;
     assert!(mid[0] > 200, "center should be red, got {mid:?}");
+
+    assert_eq!(dest_size_for_target(corners, 1920, 1080), (1920, 1080));
+    let tablet = warp_quad_to(&img, corners, (1920, 1080)).expect("warp to tablet");
+    assert_eq!(tablet.dimensions(), (1920, 1080));
+    let tablet_mid = tablet.get_pixel(960, 540).0;
+    assert!(
+        tablet_mid[0] > 200,
+        "tablet-sized center should be red, got {tablet_mid:?}"
+    );
 }
 
 #[test]
