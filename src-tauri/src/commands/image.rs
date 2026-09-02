@@ -527,8 +527,13 @@ mod tests {
         let mut events = Vec::new();
         let photos = import_photos_inner(&dest, &[good, bad], |event| events.push(event)).unwrap();
         assert_eq!(photos.len(), 1);
+        assert!(photos[0].corners.is_some());
+        assert!(photos[0].detect_confidence.is_some());
         assert!(events.iter().any(|event| event.error.is_some()));
         assert!(events.iter().any(|event| event.photo.is_some()));
+        assert!(events.iter().any(|event| {
+            event.phase == ImportPhase::Copied && event.photo.is_none() && event.error.is_none()
+        }));
         let _ = std::fs::remove_dir_all(&dest);
     }
 
