@@ -10,7 +10,7 @@ use picoflow_flash::{
     PicoflowIdentity, VolumeKind,
 };
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppError;
 use crate::resources::{load_firmware_manifest, FirmwareManifest};
@@ -140,6 +140,22 @@ fn map_circuitpy_io(err: io::Error) -> AppError {
     }
 }
 
+async fn run_blocking<T, F>(f: F) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|err| Err(AppError::io(format!("background task failed: {err}"))))
+}
+
+fn record_volumes_on_app(app: &AppHandle, volumes: &[PicoVolume]) {
+    let session = app.state::<Mutex<Session>>();
+    let mut session = lock_session(&session);
+    record_volumes(&mut session, volumes);
+}
+
 fn eject_path(path: &Path) {
     #[cfg(target_os = "macos")]
     {
@@ -178,7 +194,7 @@ pub fn list_pico_volumes(session: State<'_, Mutex<Session>>) -> Result<Vec<PicoV
 
 /// Byte-copy the bundled UF2 onto an `RpiRp2` volume. Does not wait for CIRCUITPY.
 #[tauri::command]
-pub fn flash_uf2(
+pub async fn flash_uf2(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
     volume_id: String,
@@ -188,46 +204,49 @@ pub fn flash_uf2(
         require_scanned_volume(&session, &volume_id, VolumeKind::RpiRp2)?
     };
     let manifest = load_firmware_manifest(&app)?;
-    let bytes = std::fs::read(&manifest.circuitpython.uf2)?;
-    if !sha256_matches(&bytes, &manifest.circuitpython.sha256) {
-        return Err(AppError::uf2_checksum(format!(
-            "bundled UF2 sha256 mismatch (expected {})",
-            manifest.circuitpython.sha256
-        )));
-    }
+    let uf2_path = PathBuf::from(&manifest.circuitpython.uf2);
+    let expected_sha = manifest.circuitpython.sha256.clone();
     let dest = volume.path.join("circuitpython.uf2");
-    write_file_bytes(&dest, &bytes, VolumeKind::RpiRp2).map_err(map_circuitpy_io)?;
-    Ok(())
+    run_blocking(move || {
+        let bytes = std::fs::read(&uf2_path)?;
+        if !sha256_matches(&bytes, &expected_sha) {
+            return Err(AppError::uf2_checksum(format!(
+                "bundled UF2 sha256 mismatch (expected {expected_sha})"
+            )));
+        }
+        write_file_bytes(&dest, &bytes, VolumeKind::RpiRp2).map_err(map_circuitpy_io)
+    })
+    .await
 }
 
 /// Poll `list_pico_volumes` until `kind` appears or `timeout_ms` elapses.
 #[tauri::command]
-pub fn wait_for_volume(
-    session: State<'_, Mutex<Session>>,
+pub async fn wait_for_volume(
+    app: AppHandle,
     kind: VolumeKind,
     timeout_ms: u64,
 ) -> Result<PicoVolume, AppError> {
     let timeout = Duration::from_millis(timeout_ms);
-    match picoflow_flash::wait_for_volume_with(
-        &picoflow_flash::platform::default_source(),
-        kind,
-        timeout,
-        |vols| {
-            let mut session = lock_session(&session);
-            record_volumes(&mut session, vols);
-        },
-    ) {
-        Ok(volume) => Ok(volume),
-        Err(err) if err.kind() == io::ErrorKind::TimedOut => {
-            Err(AppError::flash_timeout(err.to_string()))
+    run_blocking(move || {
+        match picoflow_flash::wait_for_volume_with(
+            &picoflow_flash::platform::default_source(),
+            kind,
+            timeout,
+            |vols| record_volumes_on_app(&app, vols),
+        ) {
+            Ok(volume) => Ok(volume),
+            Err(err) if err.kind() == io::ErrorKind::TimedOut => {
+                Err(AppError::flash_timeout(err.to_string()))
+            }
+            Err(err) => Err(err.into()),
         }
-        Err(err) => Err(err.into()),
-    }
+    })
+    .await
 }
 
 /// Full Phase B: lib → identity (from sequence + manifest) → sequence → boot → code.py last.
 #[tauri::command]
-pub fn write_circuitpy(
+pub async fn write_circuitpy(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
     volume_id: String,
@@ -239,13 +258,17 @@ pub fn write_circuitpy(
     };
     let manifest = load_firmware_manifest(&app)?;
     let payload = circuitpy_payload(&manifest, &sequence)?;
-    picoflow_flash::write_circuitpy(&volume.path, &payload).map_err(map_circuitpy_io)?;
-    Ok(())
+    let path = volume.path;
+    run_blocking(move || {
+        picoflow_flash::write_circuitpy(&path, &payload).map_err(map_circuitpy_io)?;
+        Ok(())
+    })
+    .await
 }
 
 /// Rewrite `sequence.json` only when on-device identity matches bundled runtime + sequence profile.
 #[tauri::command]
-pub fn write_sequence_only(
+pub async fn write_sequence_only(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
     volume_id: String,
@@ -257,11 +280,16 @@ pub fn write_sequence_only(
     };
     let manifest = load_firmware_manifest(&app)?;
     let profile = to_flash_profile(sequence.hid_profile)?;
-    let identity = picoflow_flash::read_identity(&volume.path);
-    sequence_only_allowed(identity.as_ref(), &manifest.runtime.version, profile)?;
+    let runtime_version = manifest.runtime.version.clone();
+    let path = volume.path;
     let bytes = sequence_bytes(&sequence)?;
-    picoflow_flash::write_sequence_only(&volume.path, &bytes).map_err(map_circuitpy_io)?;
-    Ok(())
+    run_blocking(move || {
+        let identity = picoflow_flash::read_identity(&path);
+        sequence_only_allowed(identity.as_ref(), &runtime_version, profile)?;
+        picoflow_flash::write_sequence_only(&path, &bytes).map_err(map_circuitpy_io)?;
+        Ok(())
+    })
+    .await
 }
 
 /// macOS `diskutil eject <path>` as an argv array. Failure is a warning, not a hard error.

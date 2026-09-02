@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use picoflow_flash::{
-    read_identity, write_circuitpy, write_sequence_only, CircuitpyPayload, HidProfile,
+    read_identity, write_circuitpy, write_circuitpy_with, write_sequence_only, CircuitpyPayload,
+    HidProfile,
 };
 use tempfile::tempdir;
 
@@ -188,4 +189,31 @@ fn missing_volume_is_not_created() {
     let err = write_circuitpy(&missing, &payload).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     assert!(!missing.exists(), "must not mkdir a vanished CIRCUITPY");
+}
+
+#[test]
+fn vanished_root_mid_copy_is_not_recreated() {
+    let src = tempdir().unwrap();
+    let parent = tempdir().unwrap();
+    let dest = parent.path().join("CIRCUITPY");
+    fs::create_dir(&dest).unwrap();
+    let payload = payload(src.path(), "absolute_mouse_keyboard", "# boot\n");
+    let dest_for_hook = dest.clone();
+    let mut removed = false;
+    let err = write_circuitpy_with(&dest, &payload, |written| {
+        let is_lib = written
+            .strip_prefix(&dest_for_hook)
+            .is_ok_and(|rel| rel.starts_with("lib"));
+        if is_lib && !removed {
+            fs::remove_dir_all(&dest_for_hook).unwrap();
+            removed = true;
+        }
+        Ok(())
+    })
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    assert!(
+        !dest.exists(),
+        "must not mkdir a CIRCUITPY root that vanished mid-copy"
+    );
 }

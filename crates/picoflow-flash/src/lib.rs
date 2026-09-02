@@ -6,7 +6,9 @@ mod circuitpy;
 mod copy;
 mod volume;
 
-pub use circuitpy::{read_identity, write_circuitpy, write_sequence_only, CircuitpyPayload};
+pub use circuitpy::{
+    read_identity, write_circuitpy, write_circuitpy_with, write_sequence_only, CircuitpyPayload,
+};
 pub use copy::write_file_bytes;
 pub use volume::{
     list_pico_volumes, list_pico_volumes_with, wait_for_volume, wait_for_volume_with,

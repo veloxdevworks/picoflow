@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::copy::write_file_bytes;
 use crate::volume::{PicoflowIdentity, VolumeKind};
@@ -34,37 +34,57 @@ pub struct CircuitpyPayload {
 /// Order: `lib/**/*.py` → `picoflow.json` → `sequence.json` → `boot.py` →
 /// quiet-volume markers (if missing) → `code.py` last.
 pub fn write_circuitpy(volume_root: &Path, payload: &CircuitpyPayload) -> io::Result<Vec<PathBuf>> {
+    write_circuitpy_with(volume_root, payload, |_| Ok(()))
+}
+
+/// Same as [`write_circuitpy`], with a hook after each dest file (tests inject unmount).
+pub fn write_circuitpy_with<F>(
+    volume_root: &Path,
+    payload: &CircuitpyPayload,
+    mut after_file: F,
+) -> io::Result<Vec<PathBuf>>
+where
+    F: FnMut(&Path) -> io::Result<()>,
+{
     require_existing_volume(volume_root)?;
     unlink_apple_doubles(volume_root);
 
     let mut written = Vec::new();
     for (rel, bytes) in collect_lib_py_files(&payload.lib_dirs)? {
-        write_rel(volume_root, &rel, &bytes, &mut written)?;
+        write_rel(volume_root, &rel, &bytes, &mut written, &mut after_file)?;
     }
     write_rel(
         volume_root,
         Path::new(IDENTITY_NAME),
         &payload.identity_json,
         &mut written,
+        &mut after_file,
     )?;
     write_rel(
         volume_root,
         Path::new(SEQUENCE_NAME),
         &payload.sequence_json,
         &mut written,
+        &mut after_file,
     )?;
     write_rel(
         volume_root,
         Path::new(BOOT_NAME),
         &payload.boot_py,
         &mut written,
+        &mut after_file,
     )?;
+    let markers_from = written.len();
     ensure_finder_quiet(volume_root, &mut written)?;
+    for path in &written[markers_from..] {
+        after_file(path)?;
+    }
     write_rel(
         volume_root,
         Path::new(CODE_NAME),
         &payload.code_py,
         &mut written,
+        &mut after_file,
     )?;
     unlink_apple_doubles(volume_root);
     Ok(written)
@@ -100,33 +120,88 @@ fn require_existing_volume(volume_root: &Path) -> io::Result<()> {
     }
 }
 
-fn write_rel(
+fn write_rel<F>(
     volume_root: &Path,
     rel: &Path,
     bytes: &[u8],
     written: &mut Vec<PathBuf>,
-) -> io::Result<()> {
-    let dest = volume_root.join(rel);
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
+    after_file: &mut F,
+) -> io::Result<()>
+where
+    F: FnMut(&Path) -> io::Result<()>,
+{
+    require_existing_volume(volume_root)?;
+    if let Some(parent_rel) = rel.parent().filter(|p| !p.as_os_str().is_empty()) {
+        create_volume_subdirs(volume_root, parent_rel)?;
     }
+    require_existing_volume(volume_root)?;
+    let dest = volume_root.join(rel);
     write_file_bytes(&dest, bytes, VolumeKind::Circuitpy)?;
+    after_file(&dest)?;
     written.push(dest);
     Ok(())
 }
 
+/// `create_dir` per relative component so a vanished `volume_root` is NotFound, not mkdir'd.
+fn create_volume_subdirs(volume_root: &Path, rel: &Path) -> io::Result<()> {
+    if rel.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("CIRCUITPY subdir {} must be relative", rel.display()),
+        ));
+    }
+    require_existing_volume(volume_root)?;
+    let mut cur = volume_root.to_path_buf();
+    for component in rel.components() {
+        match component {
+            Component::Normal(name) => {
+                cur.push(name);
+                match create_dir_if_missing(&cur) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        require_existing_volume(volume_root)?;
+                        return Err(err);
+                    }
+                }
+                require_existing_volume(volume_root)?;
+            }
+            Component::CurDir => {}
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("refusing to create {}", rel.display()),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn create_dir_if_missing(path: &Path) -> io::Result<()> {
+    match fs::create_dir(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
 fn ensure_finder_quiet(volume_root: &Path, written: &mut Vec<PathBuf>) -> io::Result<()> {
+    require_existing_volume(volume_root)?;
     let meta = volume_root.join(METADATA_NEVER_INDEX);
     if !meta.exists() {
+        require_existing_volume(volume_root)?;
         write_file_bytes(&meta, b"", VolumeKind::Circuitpy)?;
         written.push(meta);
     }
+    require_existing_volume(volume_root)?;
     let fse = volume_root.join(FSEVENTSD);
     if !fse.is_dir() {
-        fs::create_dir_all(&fse)?;
+        create_dir_if_missing(&fse)?;
+        require_existing_volume(volume_root)?;
     }
     let no_log = fse.join(NO_LOG);
     if !no_log.exists() {
+        require_existing_volume(volume_root)?;
         write_file_bytes(&no_log, b"", VolumeKind::Circuitpy)?;
         written.push(no_log);
     }
