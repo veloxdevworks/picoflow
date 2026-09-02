@@ -179,6 +179,30 @@ fn linux_proc_mounts_dedupes_media_root() {
 }
 
 #[test]
+fn linux_unreadable_first_root_still_scans_rest() {
+    let root = tempdir().unwrap();
+    let not_a_dir = root.path().join("not-a-dir");
+    fs::write(&not_a_dir, b"x").unwrap();
+    let run = root.path().join("run").join("media").join("alice");
+    fs::create_dir_all(run.join(LABEL_CIRCUITPY)).unwrap();
+    let extra = root.path().join("mnt").join(LABEL_RPI_RP2);
+    fs::create_dir_all(&extra).unwrap();
+    let proc = root.path().join("mounts");
+    fs::write(
+        &proc,
+        format!("/dev/sdb1 {} vfat rw 0 0\n", extra.display()),
+    )
+    .unwrap();
+
+    let vols = LinuxVolumeSource::new(vec![not_a_dir, run.clone()], Some(proc))
+        .list_raw()
+        .unwrap();
+    assert_eq!(vols.len(), 2);
+    assert!(vols.iter().any(|v| v.path == run.join(LABEL_CIRCUITPY)));
+    assert!(vols.iter().any(|v| v.path == extra));
+}
+
+#[test]
 fn linux_missing_roots_are_empty() {
     let root = tempdir().unwrap();
     let vols = LinuxVolumeSource::new(

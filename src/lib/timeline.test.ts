@@ -11,6 +11,7 @@ import {
   MAX_ZOOM,
   MIN_CLIP_DURATION_MS,
   MIN_ZOOM,
+  rippleSnapTargetsMs,
   snapDurationMs,
   snapMs,
   snapTargetsMs,
@@ -144,6 +145,14 @@ describe("zoom and snap", () => {
   it("snaps a ripple end to a nearby target", () => {
     expect(snapDurationMs(0, 1790, [0, 1800, 4000], 20)).toBe(1800);
     expect(snapDurationMs(0, 50, [0, 1800], 20)).toBe(MIN_CLIP_DURATION_MS);
+  });
+
+  it("does not snap a ripple end before the clip start", () => {
+    expect(snapDurationMs(4000, 100, [0, 1800, 4000, 6000], 500)).toBe(
+      MIN_CLIP_DURATION_MS,
+    );
+    expect(rippleSnapTargetsMs(clips[0], actions)).toEqual([1800, 4000]);
+    expect(rippleSnapTargetsMs(clips[1], actions)).toEqual([6000]);
   });
 
   it("picks denser ticks when zoomed in", () => {

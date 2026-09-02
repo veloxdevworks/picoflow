@@ -52,9 +52,20 @@ impl VolumeSource for LinuxVolumeSource {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         for root in &self.roots {
-            for volume in scan_volume_root(root)? {
-                if seen.insert(volume.path.clone()) {
-                    out.push(volume);
+            match scan_volume_root(root) {
+                Ok(volumes) => {
+                    for volume in volumes {
+                        if seen.insert(volume.path.clone()) {
+                            out.push(volume);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        error = %e,
+                        path = %root.display(),
+                        "skipping unreadable volume root"
+                    );
                 }
             }
         }

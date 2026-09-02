@@ -113,7 +113,10 @@ async function pollForWritable(
   }
 }
 
-async function loadPayload(project: Project | null): Promise<{
+async function loadPayload(
+  project: Project | null,
+  fallbackRunMode: RunMode,
+): Promise<{
   manifest: FirmwareManifest;
   volumes: PicoVolume[];
   sequence: Sequence;
@@ -121,7 +124,11 @@ async function loadPayload(project: Project | null): Promise<{
   const [manifest, volumes, sequence] = await Promise.all([
     getFirmwareManifest(),
     listPicoVolumes(),
-    project ? exportSequence(project) : Promise.resolve(emptySequence()),
+    project
+      ? exportSequence(project)
+      : Promise.resolve(
+          emptySequence("absolute_mouse_keyboard", fallbackRunMode),
+        ),
   ]);
   return { manifest, volumes, sequence };
 }
@@ -387,7 +394,10 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
     lastCircuitpyIdRef.current = null;
     setPhase("loading");
     try {
-      const loaded = await loadPayload(useEditor.getState().project);
+      const loaded = await loadPayload(
+        useEditor.getState().project,
+        fallbackRunModeRef.current,
+      );
       if (!still(gen)) {
         return;
       }

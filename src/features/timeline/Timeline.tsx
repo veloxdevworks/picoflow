@@ -21,6 +21,7 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   SNAP_THRESHOLD_PX,
+  rippleSnapTargetsMs,
   snapDurationMs,
   snapMs,
   snapTargetsMs,
@@ -152,7 +153,7 @@ function maybeSnapRipple(
   return snapDurationMs(
     clip.startMs,
     durationMs,
-    snapTargetsMs(clips, actions),
+    rippleSnapTargetsMs(clip, actions),
     SNAP_THRESHOLD_PX / pxPerMs,
   );
 }
@@ -181,6 +182,7 @@ export function Timeline() {
   const clipsRef = useRef(clips);
   const actionsRef = useRef(actions);
   const snapRef = useRef(true);
+  const zoomRef = useRef(MIN_ZOOM);
   const zoomAnchorRef = useRef<{ ms: number; clientX: number } | null>(null);
   const listenersRef = useRef<{
     move: (event: PointerEvent) => void;
@@ -204,6 +206,7 @@ export function Timeline() {
   clipsRef.current = clips;
   actionsRef.current = actions;
   snapRef.current = snap;
+  zoomRef.current = zoom;
 
   const measure = useCallback(() => {
     const el = viewportRef.current;
@@ -481,22 +484,25 @@ export function Timeline() {
     viewport.scrollLeft = Math.max(0, anchor.ms * pxPerMs - viewX);
   }, [zoom, pxPerMs, contentWidth]);
 
-  const applyZoom = useCallback((next: number, anchorClientX?: number) => {
-    const clamped = clampZoom(next);
-    setZoom((prev) => {
-      if (clamped === prev) {
-        return prev;
-      }
-      const viewport = viewportRef.current;
-      if (viewport && pxPerMsRef.current > 0) {
-        const clientX =
-          anchorClientX ??
-          viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
-        zoomAnchorRef.current = { ms: clientXToMs(clientX), clientX };
-      }
-      return clamped;
-    });
-  }, [clientXToMs]);
+  const applyZoomFactor = useCallback(
+    (factor: number, anchorClientX?: number) => {
+      setZoom((prev) => {
+        const clamped = clampZoom(prev * factor);
+        if (clamped === prev) {
+          return prev;
+        }
+        const viewport = viewportRef.current;
+        if (viewport && pxPerMsRef.current > 0) {
+          const clientX =
+            anchorClientX ??
+            viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
+          zoomAnchorRef.current = { ms: clientXToMs(clientX), clientX };
+        }
+        return clamped;
+      });
+    },
+    [clientXToMs],
+  );
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -507,17 +513,20 @@ export function Timeline() {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-        applyZoom(zoom * factor, event.clientX);
+        applyZoomFactor(factor, event.clientX);
         return;
       }
-      if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && zoom > MIN_ZOOM) {
+      if (
+        Math.abs(event.deltaY) > Math.abs(event.deltaX) &&
+        zoomRef.current > MIN_ZOOM
+      ) {
         event.preventDefault();
         viewport.scrollLeft += event.deltaY;
       }
     };
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
-  }, [applyZoom, clips.length, zoom]);
+  }, [applyZoomFactor, clips.length]);
 
   const onScrubPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -678,7 +687,7 @@ export function Timeline() {
       <div className="flex items-center gap-1 border-b border-zinc-800 px-2 py-0.5">
         <button
           type="button"
-          onClick={() => applyZoom(zoom / ZOOM_STEP)}
+          onClick={() => applyZoomFactor(1 / ZOOM_STEP)}
           disabled={zoom <= MIN_ZOOM}
           className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
           aria-label="Zoom out"
@@ -687,7 +696,7 @@ export function Timeline() {
         </button>
         <button
           type="button"
-          onClick={() => applyZoom(zoom * ZOOM_STEP)}
+          onClick={() => applyZoomFactor(ZOOM_STEP)}
           disabled={zoom >= MAX_ZOOM}
           className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
           aria-label="Zoom in"

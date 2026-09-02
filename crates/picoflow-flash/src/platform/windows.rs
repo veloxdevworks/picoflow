@@ -68,11 +68,19 @@ fn win32_labeled_roots() -> io::Result<Vec<(String, PathBuf)>> {
     const DRIVE_REMOVABLE: u32 = 2;
     const DRIVE_FIXED: u32 = 3;
     const VOLUME_NAME_CHARS: usize = 261;
+    const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+    const SEM_NOOPENFILEERRORBOX: u32 = 0x8000;
 
     #[link(name = "kernel32")]
     extern "system" {
         fn GetLogicalDrives() -> u32;
         fn GetDriveTypeW(lpRootPathName: *const u16) -> u32;
+        fn GetDiskFreeSpaceExW(
+            lpDirectoryName: *const u16,
+            lpFreeBytesAvailableToCaller: *mut u64,
+            lpTotalNumberOfBytes: *mut u64,
+            lpTotalNumberOfFreeBytes: *mut u64,
+        ) -> i32;
         fn GetVolumeInformationW(
             lpRootPathName: *const u16,
             lpVolumeNameBuffer: *mut u16,
@@ -83,7 +91,37 @@ fn win32_labeled_roots() -> io::Result<Vec<(String, PathBuf)>> {
             lpFileSystemNameBuffer: *mut u16,
             nFileSystemNameSize: u32,
         ) -> i32;
+        fn SetThreadErrorMode(uMode: u32, lpOldMode: *mut u32) -> i32;
     }
+
+    struct ErrorModeGuard {
+        previous: u32,
+    }
+
+    impl ErrorModeGuard {
+        fn suppress_critical() -> Self {
+            let mut previous = 0u32;
+            // SAFETY: thread-local error mode; restored in Drop.
+            unsafe {
+                SetThreadErrorMode(
+                    SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX,
+                    &mut previous,
+                );
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for ErrorModeGuard {
+        fn drop(&mut self) {
+            // SAFETY: restores the mode captured in `suppress_critical`.
+            unsafe {
+                SetThreadErrorMode(self.previous, std::ptr::null_mut());
+            }
+        }
+    }
+
+    let _guard = ErrorModeGuard::suppress_critical();
 
     // SAFETY: kernel32 volume APIs; `root` is a NUL-terminated `X:\`.
     let mask = unsafe { GetLogicalDrives() };
@@ -96,6 +134,19 @@ fn win32_labeled_roots() -> io::Result<Vec<(String, PathBuf)>> {
         let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
         let drive_type = unsafe { GetDriveTypeW(root.as_ptr()) };
         if drive_type != DRIVE_REMOVABLE && drive_type != DRIVE_FIXED {
+            continue;
+        }
+        // Empty card-reader slots stay DRIVE_REMOVABLE; skip before GetVolumeInformationW.
+        let mut dummy = 0u64;
+        let ready = unsafe {
+            GetDiskFreeSpaceExW(
+                root.as_ptr(),
+                &mut dummy,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if ready == 0 {
             continue;
         }
         let mut name = [0u16; VOLUME_NAME_CHARS];

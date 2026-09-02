@@ -123,13 +123,34 @@ export function snapMs(
   return best;
 }
 
+/** In-clip keyframes and this clip's current end; never before min duration. */
+export function rippleSnapTargetsMs(
+  clip: Clip,
+  actions: readonly Action[],
+): number[] {
+  const end = clip.startMs + clip.durationMs;
+  const minEnd = clip.startMs + MIN_CLIP_DURATION_MS;
+  const targets = new Set<number>();
+  if (end >= minEnd) {
+    targets.add(end);
+  }
+  for (const action of actions) {
+    if (action.atMs >= minEnd && action.atMs < end) {
+      targets.add(action.atMs);
+    }
+  }
+  return [...targets].sort((a, b) => a - b);
+}
+
 export function snapDurationMs(
   startMs: number,
   durationMs: number,
   targets: readonly number[],
   thresholdMs: number,
 ): number {
-  const end = snapMs(startMs + durationMs, targets, thresholdMs);
+  const minEnd = startMs + MIN_CLIP_DURATION_MS;
+  const allowed = targets.filter((target) => target >= minEnd);
+  const end = snapMs(startMs + durationMs, allowed, thresholdMs);
   return clampClipDurationMs(end - startMs);
 }
 
