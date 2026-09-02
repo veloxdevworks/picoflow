@@ -11,6 +11,7 @@ import {
   containRect,
   DETECT_CONFIDENCE_THRESHOLD,
   insetRectangle,
+  tabletSize,
   type Rect,
 } from "../../lib/coords";
 import { newId } from "../../lib/ids";
@@ -37,6 +38,23 @@ function stillSelected(photoId: string): boolean {
   return selection?.type === "photo" && selection.id === photoId;
 }
 
+function persistDetectOnPhoto(
+  photoId: string,
+  corners: Quad,
+  confidence: number,
+): void {
+  const { project, setProject } = useEditor.getState();
+  if (!project) {
+    return;
+  }
+  const photos = project.photos.map((photo) =>
+    photo.id === photoId
+      ? { ...photo, corners, detectConfidence: confidence }
+      : photo,
+  );
+  setProject({ ...project, photos });
+}
+
 async function detectIntoSession(
   photo: Photo,
   preferExisting: boolean,
@@ -49,7 +67,7 @@ async function detectIntoSession(
     setNormalize({
       photoId: photo.id,
       corners: photo.corners,
-      confidence: 1,
+      confidence: photo.detectConfidence ?? 1,
       imageWidth: photo.width,
       imageHeight: photo.height,
     });
@@ -67,6 +85,7 @@ async function detectIntoSession(
       imageWidth: result.imageWidth,
       imageHeight: result.imageHeight,
     });
+    persistDetectOnPhoto(photo.id, result.corners, result.confidence);
   } catch {
     if (!stillSelected(photo.id)) {
       return;
@@ -150,7 +169,7 @@ export function NormalizeView() {
     const photo = selectedPhoto;
     let cancelled = false;
     setBusy(true);
-    void detectIntoSession(photo, forceEdit && !!photo.corners).finally(() => {
+    void detectIntoSession(photo, !!photo.corners).finally(() => {
       if (!cancelled) {
         setBusy(false);
       }
@@ -202,14 +221,19 @@ export function NormalizeView() {
     setBusy(true);
     setError(null);
     try {
+      const dest = tabletSize(current.target);
       const warped = await warpPhoto(
         currentSession.photoId,
         currentSession.corners,
+        dest.width,
+        dest.height,
       );
       const latest = useEditor.getState().project ?? current;
       const appended = !latest.clips.some((clip) => clip.photoId === warped.id);
       const photos = latest.photos.map((photo) =>
-        photo.id === warped.id ? warped : photo,
+        photo.id === warped.id
+          ? { ...warped, detectConfidence: currentSession.confidence }
+          : photo,
       );
       const clips = appendClipIfNeeded(latest.clips, warped);
       setProject({ ...latest, photos, clips });

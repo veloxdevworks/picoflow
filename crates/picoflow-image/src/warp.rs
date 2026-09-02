@@ -3,8 +3,19 @@ use nalgebra::{Matrix3, SMatrix, SVector, Vector3, SVD};
 
 use crate::{Error, Point};
 
-/// Long edge of the warped PNG is clamped to this many pixels.
+/// Long edge of the warped PNG is clamped to this many pixels when dest is
+/// inferred from the photographed quad. Explicit tablet size is used as-is.
 pub const MAX_WARP_LONG_EDGE: u32 = 1920;
+
+/// Destination size from tablet pixels. `0` on either axis falls back to
+/// [`dest_size`] of `corners` (legacy / missing target).
+pub fn dest_size_for_target(corners: [Point; 4], width: u32, height: u32) -> (u32, u32) {
+    if width > 0 && height > 0 {
+        (width, height)
+    } else {
+        dest_size(corners)
+    }
+}
 
 /// Destination size: mean of opposite sides, long edge clamped to 1920.
 pub fn dest_size(corners: [Point; 4]) -> (u32, u32) {
@@ -24,8 +35,19 @@ pub fn dest_size(corners: [Point; 4]) -> (u32, u32) {
 }
 
 /// DLT homography + bilinear sample. `corners` are TL, TR, BR, BL in source pixels.
+/// Dest size is inferred from the quad (legacy). Prefer [`warp_quad_to`] when the
+/// project has an explicit tablet resolution.
 pub fn warp_quad(src: &RgbImage, corners: [Point; 4]) -> Result<RgbImage, Error> {
-    let (dw, dh) = dest_size(corners);
+    warp_quad_to(src, corners, dest_size(corners))
+}
+
+/// Warp the confirmed quad into an explicit destination size (tablet pixels).
+pub fn warp_quad_to(
+    src: &RgbImage,
+    corners: [Point; 4],
+    dest: (u32, u32),
+) -> Result<RgbImage, Error> {
+    let (dw, dh) = (dest.0.max(1), dest.1.max(1));
     if dw == 1 && dh == 1 {
         let sx = corners.iter().map(|p| p.x).sum::<f64>() / 4.0;
         let sy = corners.iter().map(|p| p.y).sum::<f64>() / 4.0;
@@ -184,5 +206,32 @@ mod tests {
             out.get_pixel(out.width() - 1, out.height() - 1),
             img.get_pixel(19, 9)
         );
+    }
+
+    #[test]
+    fn dest_size_for_target_uses_tablet_pixels() {
+        let corners = [
+            Point::new(0.0, 0.0),
+            Point::new(4000.0, 0.0),
+            Point::new(4000.0, 2000.0),
+            Point::new(0.0, 2000.0),
+        ];
+        assert_eq!(dest_size_for_target(corners, 1280, 800), (1280, 800));
+        assert_eq!(dest_size_for_target(corners, 0, 1080), dest_size(corners));
+        assert_eq!(dest_size_for_target(corners, 1920, 0), dest_size(corners));
+    }
+
+    #[test]
+    fn warp_quad_to_honors_target_size() {
+        let img = RgbImage::from_pixel(40, 30, Rgb([200, 10, 10]));
+        let corners = [
+            Point::new(0.0, 0.0),
+            Point::new(39.0, 0.0),
+            Point::new(39.0, 29.0),
+            Point::new(0.0, 29.0),
+        ];
+        let out = warp_quad_to(&img, corners, (320, 180)).expect("warp");
+        assert_eq!(out.dimensions(), (320, 180));
+        assert_eq!(out.get_pixel(160, 90), img.get_pixel(20, 15));
     }
 }

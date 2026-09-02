@@ -80,6 +80,8 @@ pub async fn warp_photo(
     session: State<'_, Mutex<Session>>,
     photo_id: String,
     corners: [Point; 4],
+    dest_width: u32,
+    dest_height: u32,
 ) -> Result<Photo, AppError> {
     let project_dir = {
         let session = lock_session(&session)?;
@@ -87,15 +89,18 @@ pub async fn warp_photo(
     };
     let id = parse_photo_id(&photo_id)?;
     let raw = raw_photo_path(&project_dir, &id)?;
-    let image_corners = [
-        picoflow_image::Point::new(corners[0].x, corners[0].y),
-        picoflow_image::Point::new(corners[1].x, corners[1].y),
-        picoflow_image::Point::new(corners[2].x, corners[2].y),
-        picoflow_image::Point::new(corners[3].x, corners[3].y),
-    ];
+    let image_corners = image_points(corners);
 
     tauri::async_runtime::spawn_blocking(move || {
-        warp_photo_inner(&project_dir, id, &raw, image_corners, corners)
+        warp_photo_inner(
+            &project_dir,
+            id,
+            &raw,
+            image_corners,
+            corners,
+            dest_width,
+            dest_height,
+        )
     })
     .await
     .map_err(|_| AppError::io("image worker failed"))?
@@ -124,6 +129,8 @@ fn import_photos_inner(project_dir: &Path, paths: &[PathBuf]) -> Result<Vec<Phot
     let mut photos = Vec::with_capacity(paths.len());
     for src in paths {
         let oriented = decode_path(src)?;
+        // Detect on the already-oriented pixels — do not decode a second time.
+        let detected = picoflow_image::detect_screen_quad(&oriented.pixels);
         let id = PhotoId::new();
         let rel = format!("photos/raw/{id}.{}", oriented.source_format.raw_extension());
         let dest = project_dir.join(&rel);
@@ -132,7 +139,8 @@ fn import_photos_inner(project_dir: &Path, paths: &[PathBuf]) -> Result<Vec<Phot
             id,
             raw_path: rel,
             warped_path: None,
-            corners: None,
+            corners: Some(core_points(detected.corners)),
+            detect_confidence: Some(detected.confidence),
             normalized: false,
             width: oriented.width(),
             height: oriented.height(),
@@ -149,15 +157,20 @@ fn warp_photo_inner(
     raw: &Path,
     image_corners: [picoflow_image::Point; 4],
     corners: [Point; 4],
+    dest_width: u32,
+    dest_height: u32,
 ) -> Result<Photo, AppError> {
     let oriented = decode_path(raw)?;
-    let warped = picoflow_image::warp_quad(&oriented.pixels, image_corners)?;
+    let dest = picoflow_image::dest_size_for_target(image_corners, dest_width, dest_height);
+    let warped = picoflow_image::warp_quad_to(&oriented.pixels, image_corners, dest)?;
     let warped_dir = project_dir.join("photos/warped");
     std::fs::create_dir_all(&warped_dir)?;
     ensure_dir_under_project(project_dir, &warped_dir)?;
     let rel = format!("photos/warped/{id}.png");
-    let dest = project_dir.join(&rel);
-    warped.save(&dest).map_err(picoflow_image::Error::from)?;
+    let dest_path = project_dir.join(&rel);
+    warped
+        .save(&dest_path)
+        .map_err(picoflow_image::Error::from)?;
 
     let raw_rel = raw_relative_path(raw, id);
     Ok(Photo {
@@ -165,12 +178,43 @@ fn warp_photo_inner(
         raw_path: raw_rel,
         warped_path: Some(rel),
         corners: Some(corners),
+        detect_confidence: None,
         normalized: true,
         width: oriented.width(),
         height: oriented.height(),
         warped_width: Some(warped.width()),
         warped_height: Some(warped.height()),
     })
+}
+
+fn image_points(corners: [Point; 4]) -> [picoflow_image::Point; 4] {
+    [
+        picoflow_image::Point::new(corners[0].x, corners[0].y),
+        picoflow_image::Point::new(corners[1].x, corners[1].y),
+        picoflow_image::Point::new(corners[2].x, corners[2].y),
+        picoflow_image::Point::new(corners[3].x, corners[3].y),
+    ]
+}
+
+fn core_points(corners: [picoflow_image::Point; 4]) -> [Point; 4] {
+    [
+        Point {
+            x: corners[0].x,
+            y: corners[0].y,
+        },
+        Point {
+            x: corners[1].x,
+            y: corners[1].y,
+        },
+        Point {
+            x: corners[2].x,
+            y: corners[2].y,
+        },
+        Point {
+            x: corners[3].x,
+            y: corners[3].y,
+        },
+    ]
 }
 
 fn raw_relative_path(raw: &Path, id: PhotoId) -> String {

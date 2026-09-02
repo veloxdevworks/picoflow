@@ -22,7 +22,7 @@ import {
   replaceAction,
   type ActionType,
 } from "../../lib/actions";
-import { clamp01 } from "../../lib/coords";
+import { clamp01, TABLET_PRESETS, tabletSize } from "../../lib/coords";
 import { liveClamped, parseIntValue, parseMs, parseNumber } from "../../lib/parse";
 import { clampActionAtMs, totalDurationMs } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
@@ -34,6 +34,7 @@ import type {
   MouseButton,
   MouseOp,
   Photo,
+  Target,
 } from "../../types/generated";
 import { KeyPicker } from "./KeyPicker";
 
@@ -202,6 +203,17 @@ export function Inspector() {
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <fieldset
+          disabled={playing}
+          className="min-w-0 border-0 p-0 disabled:opacity-60"
+        >
+          <TargetFields
+            target={project.target}
+            onChange={(target) =>
+              updateProject((current) => ({ ...current, target }))
+            }
+          />
+        </fieldset>
         {action ? (
           <fieldset
             disabled={playing}
@@ -289,6 +301,63 @@ export function Inspector() {
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function TargetFields({
+  target,
+  onChange,
+}: {
+  target: Target;
+  onChange: (target: Target) => void;
+}) {
+  const size = tabletSize(target);
+  return (
+    <div className="mb-4 border-b border-zinc-800 pb-3">
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        Tablet
+      </p>
+      <p className="mb-2 text-[11px] leading-relaxed text-zinc-600">
+        Warp and the authoring stage use this pixel size. Sequence taps stay
+        0–1 on the surface.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Width">
+          <NumberField
+            value={size.width}
+            min={1}
+            step={1}
+            ariaLabel="Tablet width"
+            parse={parseIntValue}
+            clamp={(n) => Math.max(1, n)}
+            onCommit={(width) => onChange({ ...target, width })}
+          />
+        </Field>
+        <Field label="Height">
+          <NumberField
+            value={size.height}
+            min={1}
+            step={1}
+            ariaLabel="Tablet height"
+            parse={parseIntValue}
+            clamp={(n) => Math.max(1, n)}
+            onCommit={(height) => onChange({ ...target, height })}
+          />
+        </Field>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {TABLET_PRESETS.map((preset) => (
+          <ModeButton
+            key={preset.label}
+            active={size.width === preset.width && size.height === preset.height}
+            label={preset.label}
+            onClick={() =>
+              onChange({ ...target, width: preset.width, height: preset.height })
+            }
+          />
+        ))}
+      </div>
     </div>
   );
 }
