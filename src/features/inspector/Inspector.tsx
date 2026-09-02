@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelRight } from "lucide-react";
+import { PanelRight, RotateCcw, RotateCw, Trash2 } from "lucide-react";
 import {
   actionAtPlayhead,
   actionLabel,
@@ -26,7 +26,8 @@ import { clamp01, TABLET_PRESETS, tabletSize } from "../../lib/coords";
 import { liveClamped, parseIntValue, parseMs, parseNumber } from "../../lib/parse";
 import { clampActionAtMs, totalDurationMs } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
-import { errorMessage, insertWait } from "../../types/commands";
+import { errorMessage, insertWait, type RotateDegrees } from "../../types/commands";
+import { usePhotoActions } from "../photos/usePhotoActions";
 import type {
   Action,
   Clip,
@@ -78,6 +79,7 @@ export function Inspector() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [waitMs, setWaitMs] = useState(String(DEFAULT_WAIT_DURATION_MS));
+  const photoActions = usePhotoActions();
 
   const clip =
     project && selection?.type === "clip"
@@ -229,7 +231,12 @@ export function Inspector() {
         ) : clip ? (
           <ClipFields clip={clip} photo={clipPhoto} />
         ) : photo ? (
-          <PhotoFields photo={photo} />
+          <PhotoFields
+            photo={photo}
+            busy={photoActions.busy || playing}
+            onRotate={photoActions.onRotate}
+            onDelete={photoActions.onDelete}
+          />
         ) : (
           <p className="text-xs leading-relaxed text-zinc-600">
             Select a clip or action, or click the warped view to add a tap.
@@ -296,9 +303,12 @@ export function Inspector() {
           </div>
         ) : null}
       </div>
-      {error ? (
-        <p className="truncate px-3 pb-2 text-xs text-red-400" title={error}>
-          {error}
+      {error || photoActions.error ? (
+        <p
+          className="truncate px-3 pb-2 text-xs text-red-400"
+          title={error ?? photoActions.error ?? undefined}
+        >
+          {error ?? photoActions.error}
         </p>
       ) : null}
     </div>
@@ -380,7 +390,17 @@ function ClipFields({ clip, photo }: { clip: Clip; photo: Photo | undefined }) {
   );
 }
 
-function PhotoFields({ photo }: { photo: Photo }) {
+function PhotoFields({
+  photo,
+  busy,
+  onRotate,
+  onDelete,
+}: {
+  photo: Photo;
+  busy: boolean;
+  onRotate: (degrees: RotateDegrees) => void;
+  onDelete: () => void;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <Field label="File">
@@ -394,6 +414,45 @@ function PhotoFields({ photo }: { photo: Photo }) {
       <Field label="Normalized">
         <p className="text-xs text-zinc-200">{photo.normalized ? "Yes" : "No"}</p>
       </Field>
+      <Field label="Rotate">
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRotate(270)}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-50"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            90° CCW
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRotate(180)}
+            className="rounded-md border border-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-50"
+          >
+            180°
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRotate(90)}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-50"
+          >
+            <RotateCw className="h-3.5 w-3.5" aria-hidden />
+            90° CW
+          </button>
+        </div>
+      </Field>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onDelete}
+        className="mt-1 inline-flex items-center justify-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        Delete photo
+      </button>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod menu;
 mod resources;
 mod session;
 
@@ -17,6 +18,7 @@ pub fn run() {
         .setup(|app| {
             init_tracing(app)?;
             app.manage(Mutex::new(Session::default()));
+            menu::install(app)?;
             tracing::info!("picoflow starting");
             Ok(())
         })
@@ -29,6 +31,8 @@ pub fn run() {
             commands::image::import_photos,
             commands::image::detect_screen_quad,
             commands::image::warp_photo,
+            commands::image::rotate_photo,
+            commands::image::delete_photo,
             commands::image::read_photo_bytes,
             commands::project::create_project,
             commands::project::load_project,

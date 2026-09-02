@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rotate-photo"
+description = "Enables the rotate_photo command without any pre-configured scope."
+commands.allow = ["rotate_photo"]
+
+[[permission]]
+identifier = "deny-rotate-photo"
+description = "Denies the rotate_photo command without any pre-configured scope."
+commands.deny = ["rotate_photo"]

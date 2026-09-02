@@ -6,7 +6,7 @@ mod exif;
 mod heic;
 mod warp;
 
-pub use decode::{decode_path, save_oriented, OrientedImage, SourceFormat};
+pub use decode::{decode_path, rotate_oriented, save_oriented, OrientedImage, SourceFormat};
 pub use detect::{detect_screen_quad, DetectResult, DETECT_CONFIDENCE_THRESHOLD};
 pub use heic::{is_heic_extension, looks_like_heic};
 pub use warp::{dest_size, dest_size_for_target, warp_quad, warp_quad_to, MAX_WARP_LONG_EDGE};

@@ -13,6 +13,16 @@ export function totalDurationMs(clips: readonly Clip[]): number {
   return last.startMs + last.durationMs;
 }
 
+/** Rewrite `startMs` so clips are contiguous from 0 (matches Rust `pack_clips`). */
+export function packClips(clips: readonly Clip[]): Clip[] {
+  let t = 0;
+  return clips.map((clip) => {
+    const next = { ...clip, startMs: t };
+    t += clip.durationMs;
+    return next;
+  });
+}
+
 export function clampClipDurationMs(ms: number): number {
   if (!Number.isFinite(ms)) {
     return MIN_CLIP_DURATION_MS;

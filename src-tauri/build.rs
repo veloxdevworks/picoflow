@@ -9,6 +9,8 @@ fn main() {
             "import_photos",
             "detect_screen_quad",
             "warp_photo",
+            "rotate_photo",
+            "delete_photo",
             "read_photo_bytes",
             "create_project",
             "load_project",

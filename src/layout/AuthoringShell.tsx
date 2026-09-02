@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Cpu, Usb } from "lucide-react";
 import { Inspector } from "../features/inspector/Inspector";
 import { InstallWizard } from "../features/install/InstallWizard";
@@ -9,6 +9,13 @@ import { ProjectMenu } from "../features/project/ProjectMenu";
 import { Timeline } from "../features/timeline/Timeline";
 import { WarpedViewer } from "../features/viewer/WarpedViewer";
 import { useEditor } from "../store/editor";
+import { Splitter } from "./Splitter";
+import {
+  clampShellSizes,
+  loadShellSizes,
+  saveShellSizes,
+  type ShellSizes,
+} from "./shellSizes";
 
 export function AuthoringShell() {
   const project = useEditor((s) => s.project);
@@ -16,12 +23,27 @@ export function AuthoringShell() {
   const selection = useEditor((s) => s.selection);
   const [installOpen, setInstallOpen] = useState(false);
   const playing = useEditor((s) => s.playing);
+  const [sizes, setSizes] = useState<ShellSizes>(() => loadShellSizes());
+
+  const resizeBy = useCallback((key: keyof ShellSizes, delta: number) => {
+    setSizes((current) => {
+      const next = clampShellSizes({ ...current, [key]: current[key] + delta });
+      saveShellSizes(next);
+      return next;
+    });
+  }, []);
 
   const title = project?.name ?? "No project";
   const showNormalize = selection?.type === "photo" && !playing;
 
   return (
-    <div className="grid h-full grid-cols-[13.5rem_minmax(0,1fr)_15rem] grid-rows-[auto_minmax(0,1fr)_12.5rem] bg-zinc-950 text-zinc-100">
+    <div
+      className="grid h-full bg-zinc-950 text-zinc-100"
+      style={{
+        gridTemplateColumns: `${sizes.photos}px minmax(0,1fr) ${sizes.inspector}px`,
+        gridTemplateRows: `auto minmax(0,1fr) ${sizes.timeline}px`,
+      }}
+    >
       <header className="col-span-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-zinc-800 px-3 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex shrink-0 items-center gap-2 text-sm font-medium tracking-tight text-zinc-200">
@@ -49,19 +71,35 @@ export function AuthoringShell() {
         </p>
       </header>
 
-      <aside className="min-h-0 border-r border-zinc-800">
+      <aside className="relative min-h-0 border-r border-zinc-800">
         <PhotoStrip />
+        <Splitter
+          orientation="vertical"
+          label="Resize photos panel"
+          onDrag={(dx) => resizeBy("photos", dx)}
+        />
       </aside>
 
       <section className="min-h-0 bg-zinc-950">
         {showNormalize ? <NormalizeView /> : <WarpedViewer />}
       </section>
 
-      <aside className="min-h-0 border-l border-zinc-800 bg-zinc-950">
+      <aside className="relative min-h-0 border-l border-zinc-800 bg-zinc-950">
+        <Splitter
+          orientation="vertical"
+          edge="start"
+          label="Resize inspector panel"
+          onDrag={(dx) => resizeBy("inspector", -dx)}
+        />
         <Inspector />
       </aside>
 
-      <section className="col-span-3 min-h-0 border-t border-zinc-800 bg-zinc-900/40">
+      <section className="relative col-span-3 min-h-0 border-t border-zinc-800 bg-zinc-900/40">
+        <Splitter
+          orientation="horizontal"
+          label="Resize timeline"
+          onDrag={(dy) => resizeBy("timeline", -dy)}
+        />
         <Timeline />
       </section>
       {installOpen ? (

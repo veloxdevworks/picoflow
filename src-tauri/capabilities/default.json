@@ -15,6 +15,8 @@
     "allow-import-photos",
     "allow-detect-screen-quad",
     "allow-warp-photo",
+    "allow-rotate-photo",
+    "allow-delete-photo",
     "allow-read-photo-bytes",
     "allow-create-project",
     "allow-load-project",

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -13,7 +12,6 @@ import {
   tapAction,
 } from "../../lib/actions";
 import {
-  containRect,
   isSwipeGesture,
   pointerToNormalized,
   type Rect,
@@ -27,8 +25,6 @@ import {
 import { useEditor } from "../../store/editor";
 import type { Action, Point } from "../../types/generated";
 
-const EMPTY_RECT: Rect = { left: 0, top: 0, width: 0, height: 0 };
-
 type Gesture = {
   pointerId: number;
   origin: Point;
@@ -40,9 +36,12 @@ type Gesture = {
 export function TapSwipeLayer({
   imageWidth,
   imageHeight,
+  displayed,
 }: {
   imageWidth: number;
   imageHeight: number;
+  /** Contain-rect after the same zoom/pan as the photo (local to the stage). */
+  displayed: Rect;
 }) {
   const project = useEditor((s) => s.project);
   const playheadMs = useEditor((s) => s.playheadMs);
@@ -51,31 +50,9 @@ export function TapSwipeLayer({
   const updateProject = useEditor((s) => s.updateProject);
   const setSelection = useEditor((s) => s.setSelection);
 
-  const stageRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
-  const [stageBox, setStageBox] = useState<Rect>(EMPTY_RECT);
   const [gesture, setGesture] = useState<Gesture | null>(null);
-
-  const measure = useCallback(() => {
-    const el = stageRef.current;
-    if (!el) {
-      return;
-    }
-    const r = el.getBoundingClientRect();
-    setStageBox({ left: 0, top: 0, width: r.width, height: r.height });
-  }, []);
-
-  useLayoutEffect(() => {
-    measure();
-    const el = stageRef.current;
-    if (!el) {
-      return;
-    }
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [measure, imageWidth, imageHeight]);
 
   const clip = project ? clipAt(project.clips, playheadMs) : undefined;
   const actions = project && clip
@@ -85,8 +62,6 @@ export function TapSwipeLayer({
   const upcomingId = project
     ? upcomingKeyframe(project.actions, playheadMs)?.id ?? null
     : null;
-
-  const displayed = containRect(stageBox, imageWidth, imageHeight);
 
   const pointFromEvent = useCallback((clientX: number, clientY: number): Point => {
     const el = overlayRef.current;
@@ -202,7 +177,7 @@ export function TapSwipeLayer({
   }
 
   return (
-    <div ref={stageRef} className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0">
       {displayed.width > 0 && displayed.height > 0 ? (
         <div
           ref={overlayRef}

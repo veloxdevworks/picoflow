@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { photoUrl } from "../../lib/photoUrl";
 import { readPhotoBytes } from "../../types/commands";
 
@@ -7,6 +7,7 @@ type Props = {
   relativePath: string;
   alt: string;
   className?: string;
+  style?: CSSProperties;
   /** Changes on each warp so asset-protocol and blob URLs are not reused. */
   cacheKey?: string;
   onLoad?: () => void;
@@ -45,6 +46,7 @@ export function ProjectPhoto({
   relativePath,
   alt,
   className,
+  style,
   cacheKey,
   onLoad,
 }: Props) {
@@ -93,7 +95,7 @@ export function ProjectPhoto({
   }, [fallback, relativePath, cacheKey]);
 
   if (!src) {
-    return <div className={className} aria-hidden />;
+    return <div className={className} style={style} aria-hidden />;
   }
 
   return (
@@ -102,6 +104,7 @@ export function ProjectPhoto({
       src={src}
       alt={alt}
       className={className}
+      style={style}
       draggable={false}
       onLoad={onLoad}
       onError={() => {

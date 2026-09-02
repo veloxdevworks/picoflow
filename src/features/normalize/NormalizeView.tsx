@@ -1,21 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, Crop, Monitor, RefreshCw } from "lucide-react";
 import {
-  containRect,
   DETECT_CONFIDENCE_THRESHOLD,
   insetRectangle,
   tabletSize,
-  type Rect,
 } from "../../lib/coords";
 import { newId } from "../../lib/ids";
 import { DEFAULT_CLIP_DURATION_MS } from "../../lib/timeline";
+import { EmptyState } from "../../layout/EmptyState";
 import { useEditor } from "../../store/editor";
 import {
   detectScreenQuad,
@@ -25,9 +17,9 @@ import {
 } from "../../types/commands";
 import type { Clip, Photo } from "../../types/generated";
 import { ProjectPhoto } from "../photos/ProjectPhoto";
-import { Handles } from "./Handles";
-
-const EMPTY_RECT: Rect = { left: 0, top: 0, width: 0, height: 0 };
+import { ViewportFrame } from "../viewer/ViewportFrame";
+import { CornerLoupe } from "./CornerLoupe";
+import { Handles, type HandleDrag } from "./Handles";
 
 function photoById(photos: Photo[], id: string): Photo | undefined {
   return photos.find((photo) => photo.id === id);
@@ -139,8 +131,7 @@ export function NormalizeView() {
   const [error, setError] = useState<string | null>(null);
   const [forceEditId, setForceEditId] = useState<string | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [stageBox, setStageBox] = useState<Rect>(EMPTY_RECT);
+  const [drag, setDrag] = useState<HandleDrag | null>(null);
 
   const forceEdit =
     !!selectedPhoto && forceEditId === selectedPhoto.id;
@@ -151,6 +142,7 @@ export function NormalizeView() {
 
   useEffect(() => {
     setError(null);
+    setDrag(null);
   }, [selectedPhoto?.id]);
 
   useEffect(() => {
@@ -179,30 +171,6 @@ export function NormalizeView() {
       cancelled = true;
     };
   }, [editing, forceEdit, session?.photoId, selectedPhoto]);
-
-  const measure = useCallback(() => {
-    const el = stageRef.current;
-    if (!el) {
-      return;
-    }
-    const r = el.getBoundingClientRect();
-    setStageBox({ left: r.left, top: r.top, width: r.width, height: r.height });
-  }, []);
-
-  useLayoutEffect(() => {
-    measure();
-    const el = stageRef.current;
-    if (!el) {
-      return;
-    }
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("scroll", measure, true);
-    };
-  }, [measure, selectedPhoto?.id, editing, layoutTick]);
 
   const onConfirm = useCallback(async () => {
     const state = useEditor.getState();
@@ -277,8 +245,8 @@ export function NormalizeView() {
 
   if (!project) {
     return (
-      <Empty
-        icon={<Monitor className="h-6 w-6" aria-hidden />}
+      <EmptyState
+        icon={<Monitor className="h-10 w-10" aria-hidden />}
         label="No project open"
         hint="File → New or Open to create a .picoflow project."
       />
@@ -287,8 +255,8 @@ export function NormalizeView() {
 
   if (!selectedPhoto || !projectDir) {
     return (
-      <Empty
-        icon={<Monitor className="h-6 w-6" aria-hidden />}
+      <EmptyState
+        icon={<Monitor className="h-10 w-10" aria-hidden />}
         label="No warped frame"
         hint="Import photos from the strip, then confirm the four-corner overlay."
       />
@@ -297,20 +265,32 @@ export function NormalizeView() {
 
   if (!editing) {
     const warped = selectedPhoto.warpedPath;
+    const imageWidth = selectedPhoto.warpedWidth ?? selectedPhoto.width;
+    const imageHeight = selectedPhoto.warpedHeight ?? selectedPhoto.height;
     return (
       <div className="relative flex h-full min-h-0 flex-col bg-zinc-950">
         <div className="relative min-h-0 flex-1">
           {warped ? (
-            <ProjectPhoto
-              projectDir={projectDir}
-              relativePath={warped}
-              alt="Warped screen"
-              className="h-full w-full object-contain"
-              cacheKey={String(photoRev[selectedPhoto.id] ?? 0)}
-            />
+            <ViewportFrame imageWidth={imageWidth} imageHeight={imageHeight}>
+              {({ displayed }) => (
+                <ProjectPhoto
+                  projectDir={projectDir}
+                  relativePath={warped}
+                  alt="Warped screen"
+                  className="absolute object-fill"
+                  style={{
+                    left: displayed.left,
+                    top: displayed.top,
+                    width: displayed.width,
+                    height: displayed.height,
+                  }}
+                  cacheKey={String(photoRev[selectedPhoto.id] ?? 0)}
+                />
+              )}
+            </ViewportFrame>
           ) : (
-            <Empty
-              icon={<Monitor className="h-6 w-6" aria-hidden />}
+            <EmptyState
+              icon={<Monitor className="h-10 w-10" aria-hidden />}
               label="No warped frame"
               hint="Imported photos will appear here after normalize."
             />
@@ -339,34 +319,58 @@ export function NormalizeView() {
   const imageHeight = session?.imageHeight ?? selectedPhoto.height;
   const corners: Quad =
     session?.corners ?? insetRectangle(imageWidth, imageHeight);
-  const displayed = containRect(
-    { left: 0, top: 0, width: stageBox.width, height: stageBox.height },
-    imageWidth,
-    imageHeight,
-  );
   const lowConfidence =
     (session?.confidence ?? 0) < DETECT_CONFIDENCE_THRESHOLD;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-zinc-950">
-      <div ref={stageRef} className="relative min-h-0 flex-1 overflow-hidden">
-        <ProjectPhoto
-          projectDir={projectDir}
-          relativePath={selectedPhoto.rawPath}
-          alt="Source photo"
-          className="h-full w-full object-contain"
-          onLoad={() => setLayoutTick((n) => n + 1)}
-        />
-        {session ? (
-          <Handles
-            corners={corners}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            displayed={displayed}
-            onChange={setNormalizeCorners}
-          />
-        ) : null}
-      </div>
+      <ViewportFrame
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        revision={layoutTick}
+      >
+        {({ displayed, stageBox }) => (
+          <>
+            <ProjectPhoto
+              projectDir={projectDir}
+              relativePath={selectedPhoto.rawPath}
+              alt="Source photo"
+              className="absolute object-fill"
+              style={{
+                left: displayed.left,
+                top: displayed.top,
+                width: displayed.width,
+                height: displayed.height,
+              }}
+              cacheKey={String(photoRev[selectedPhoto.id] ?? 0)}
+              onLoad={() => setLayoutTick((n) => n + 1)}
+            />
+            {session ? (
+              <Handles
+                corners={corners}
+                imageWidth={imageWidth}
+                imageHeight={imageHeight}
+                displayed={displayed}
+                onChange={setNormalizeCorners}
+                onDrag={setDrag}
+              />
+            ) : null}
+            {drag ? (
+              <CornerLoupe
+                projectDir={projectDir}
+                relativePath={selectedPhoto.rawPath}
+                cacheKey={String(photoRev[selectedPhoto.id] ?? 0)}
+                imageWidth={imageWidth}
+                imageHeight={imageHeight}
+                point={drag.point}
+                clientX={drag.clientX}
+                clientY={drag.clientY}
+                stage={stageBox}
+              />
+            ) : null}
+          </>
+        )}
+      </ViewportFrame>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/80 px-3 py-2">
         <p className="min-w-0 text-xs text-zinc-500">
           {warping
@@ -408,24 +412,6 @@ export function NormalizeView() {
           {error}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-function Empty({
-  icon,
-  label,
-  hint,
-}: {
-  icon: ReactNode;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-      <div className="text-zinc-600">{icon}</div>
-      <p className="text-sm font-medium text-zinc-400">{label}</p>
-      <p className="max-w-sm text-xs leading-relaxed text-zinc-600">{hint}</p>
     </div>
   );
 }
