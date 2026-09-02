@@ -197,3 +197,12 @@ export function ejectVolume(volumeId: string): Promise<void> {
 export function openAppLog(): Promise<void> {
   return invoke("open_app_log");
 }
+
+/** Write a wizard failure into the tracing AppLog file. */
+export function logWizardError(args: {
+  phase: string;
+  code: string;
+  message: string;
+}): Promise<void> {
+  return invoke("log_wizard_error", args);
+}

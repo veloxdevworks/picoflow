@@ -38,6 +38,7 @@ pub fn run() {
             commands::project::write_sequence_file,
             commands::firmware::get_firmware_manifest,
             commands::firmware::open_app_log,
+            commands::firmware::log_wizard_error,
             commands::flash::flash_uf2,
             commands::flash::wait_for_volume,
             commands::flash::write_circuitpy,

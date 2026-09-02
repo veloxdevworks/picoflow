@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PicoVolume } from "../../types/commands";
 import {
+  circuitpyIds,
   emptySequence,
   firstWritable,
+  nextWritableCircuitpy,
   sequenceOnlyVolume,
+  shouldShowResetHint,
 } from "./identity";
 
 function volume(partial: Partial<PicoVolume> & Pick<PicoVolume, "id" | "kind">): PicoVolume {
@@ -94,5 +97,42 @@ describe("firstWritable", () => {
     const rp2 = volume({ id: "/Volumes/RPI-RP2", kind: "RpiRp2" });
     const cp = volume({ id: "/Volumes/CIRCUITPY", kind: "Circuitpy" });
     expect(firstWritable([cp, rp2], "RpiRp2")).toEqual(rp2);
+  });
+});
+
+describe("nextWritableCircuitpy", () => {
+  it("skips CIRCUITPY ids that were mounted before the UF2 remount", () => {
+    const prior = volume({ id: "/Volumes/CIRCUITPY", kind: "Circuitpy" });
+    const fresh = volume({ id: "/Volumes/CIRCUITPY 1", kind: "Circuitpy" });
+    const exclude = circuitpyIds([prior]);
+    expect(nextWritableCircuitpy([prior, fresh], exclude)).toEqual(fresh);
+  });
+
+  it("skips a remount that is not yet writable", () => {
+    const fresh = volume({
+      id: "/Volumes/CIRCUITPY",
+      kind: "Circuitpy",
+      writable: false,
+    });
+    expect(nextWritableCircuitpy([fresh], new Set())).toBeUndefined();
+  });
+});
+
+describe("shouldShowResetHint", () => {
+  it("hides the RESET line when the command already embedded it", () => {
+    expect(
+      shouldShowResetHint("io", "write failed. Press RESET on the Pico and retry."),
+    ).toBe(false);
+  });
+
+  it("hides the RESET line for authoring/manifest errors", () => {
+    expect(shouldShowResetHint("invalid_action", "bad tap")).toBe(false);
+    expect(shouldShowResetHint(null, "something")).toBe(false);
+  });
+
+  it("shows the RESET line for volume codes without that sentence", () => {
+    expect(shouldShowResetHint("volume_not_writable", "CIRCUITPY is not writable")).toBe(
+      true,
+    );
   });
 });

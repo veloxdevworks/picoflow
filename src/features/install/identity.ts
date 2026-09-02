@@ -48,6 +48,46 @@ export function firstWritable(
   return volumes.find((volume) => volume.kind === kind && volume.writable);
 }
 
+/** Ids already mounted as CIRCUITPY before this board's UF2 remount. */
+export function circuitpyIds(volumes: readonly PicoVolume[]): Set<string> {
+  return new Set(
+    volumes
+      .filter((volume) => volume.kind === "Circuitpy")
+      .map((volume) => volume.id),
+  );
+}
+
+/** Post-UF2: a writable CIRCUITPY that was not present at flash time. */
+export function nextWritableCircuitpy(
+  volumes: readonly PicoVolume[],
+  excludeIds: ReadonlySet<string>,
+): PicoVolume | undefined {
+  return volumes.find(
+    (volume) =>
+      volume.kind === "Circuitpy" &&
+      volume.writable &&
+      !excludeIds.has(volume.id),
+  );
+}
+
+const HARDWARE_ERROR_CODES = new Set([
+  "flash_timeout",
+  "volume_not_writable",
+  "io",
+  "not_found",
+]);
+
+/** RESET/BOOTSEL copy is for volume/flash failures; map_circuitpy_io already includes it. */
+export function shouldShowResetHint(
+  code: string | null,
+  message: string,
+): boolean {
+  if (!code || !HARDWARE_ERROR_CODES.has(code)) {
+    return false;
+  }
+  return !message.includes("Press RESET");
+}
+
 export function hidProfileLabel(profile: HidProfile): string {
   switch (profile) {
     case "absolute_mouse_keyboard":

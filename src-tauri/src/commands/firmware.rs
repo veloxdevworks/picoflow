@@ -10,6 +10,12 @@ pub fn get_firmware_manifest(app: AppHandle) -> Result<FirmwareManifest, AppErro
     load_firmware_manifest(&app)
 }
 
+/// Write wizard failures into the rolling AppLog (`tracing-appender`).
+#[tauri::command]
+pub fn log_wizard_error(phase: String, code: String, message: String) {
+    tracing::error!(phase, code, message, "install wizard error");
+}
+
 /// Reveal the Tauri AppLog directory (wizard Open log). No shell plugin.
 #[tauri::command]
 pub fn open_app_log(app: AppHandle) -> Result<(), AppError> {

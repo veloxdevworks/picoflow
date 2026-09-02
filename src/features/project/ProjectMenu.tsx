@@ -44,7 +44,11 @@ function shortcutMod(): string {
   return isApplePlatform() ? "⌘" : "Ctrl+";
 }
 
-export function ProjectMenu() {
+export function ProjectMenu({
+  shortcutsEnabled = true,
+}: {
+  shortcutsEnabled?: boolean;
+}) {
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -158,6 +162,10 @@ export function ProjectMenu() {
   }, [open]);
 
   useEffect(() => {
+    if (!shortcutsEnabled) {
+      setOpen(false);
+      return;
+    }
     function onKey(event: KeyboardEvent) {
       if (event.repeat || isEditableTarget(event.target)) {
         return;
@@ -180,7 +188,7 @@ export function ProjectMenu() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNew, onOpen, onSave]);
+  }, [onNew, onOpen, onSave, shortcutsEnabled]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -226,7 +234,7 @@ export function ProjectMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
-        disabled={busy}
+        disabled={busy || !shortcutsEnabled}
         onClick={() => setOpen((value) => !value)}
         className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50 disabled:opacity-50"
       >

@@ -18,6 +18,7 @@ fn main() {
             "write_sequence_file",
             "get_firmware_manifest",
             "open_app_log",
+            "log_wizard_error",
             "flash_uf2",
             "wait_for_volume",
             "write_circuitpy",

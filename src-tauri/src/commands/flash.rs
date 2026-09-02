@@ -134,10 +134,12 @@ fn sequence_only_allowed(
 fn map_circuitpy_io(err: io::Error) -> AppError {
     let hint = "Press RESET on the Pico and retry. If the volume is missing, re-enter BOOTSEL.";
     let message = format!("{err}. {hint}");
-    match err.kind() {
+    let app = match err.kind() {
         io::ErrorKind::NotFound => AppError::not_found(message),
         _ => AppError::io(message),
-    }
+    };
+    tracing::error!(code = ?app.code, message = %app.message, "circuitpy io");
+    app
 }
 
 async fn run_blocking<T, F>(f: F) -> Result<T, AppError>

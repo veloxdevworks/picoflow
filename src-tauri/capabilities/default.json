@@ -24,6 +24,7 @@
     "allow-write-sequence-file",
     "allow-get-firmware-manifest",
     "allow-open-app-log",
+    "allow-log-wizard-error",
     "allow-flash-uf2",
     "allow-wait-for-volume",
     "allow-write-circuitpy",

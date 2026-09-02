@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   CircleAlert,
   CircleCheck,
@@ -9,27 +16,33 @@ import {
 } from "lucide-react";
 import { useEditor } from "../../store/editor";
 import {
+  asAppError,
   ejectVolume,
   errorMessage,
   exportSequence,
   flashUf2,
   getFirmwareManifest,
   listPicoVolumes,
+  logWizardError,
   openAppLog,
-  waitForVolume,
   writeCircuitpy,
   writeSequenceOnly,
   type FirmwareManifest,
   type PicoVolume,
+  type VolumeKind,
 } from "../../types/commands";
 import type { Project, Sequence } from "../../types/generated";
 import {
   BOOTSEL_TIMEOUT_MS,
   CIRCUITPY_TIMEOUT_MS,
   VOLUME_POLL_MS,
+  circuitpyIds,
   emptySequence,
   firstWritable,
+  nextWritableCircuitpy,
   sequenceOnlyVolume,
+  shouldShowResetHint,
+  volumeKindLabel,
 } from "./identity";
 import { SequenceOnly } from "./SequenceOnly";
 import { VolumeStatus } from "./VolumeStatus";
@@ -66,11 +79,15 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function pollForRp2(
+async function pollForWritable(
+  kind: VolumeKind,
+  timeoutMs: number,
   onVolumes: (volumes: PicoVolume[]) => void,
   signal: AbortSignal,
+  pick: (volumes: PicoVolume[]) => PicoVolume | undefined,
 ): Promise<PicoVolume> {
   const start = Date.now();
+  const label = volumeKindLabel(kind);
   for (;;) {
     if (signal.aborted) {
       throw new DOMException("aborted", "AbortError");
@@ -80,17 +97,18 @@ async function pollForRp2(
       throw new DOMException("aborted", "AbortError");
     }
     onVolumes(volumes);
-    const found = firstWritable(volumes, "RpiRp2");
+    const found = pick(volumes);
     if (found) {
       return found;
     }
     const elapsed = Date.now() - start;
-    if (elapsed >= BOOTSEL_TIMEOUT_MS) {
-      throw new Error(
-        "Timed out waiting for RPI-RP2. Hold BOOTSEL, plug in USB, and retry. Press RESET if the volume is missing.",
-      );
+    if (elapsed >= timeoutMs) {
+      throw {
+        code: "flash_timeout",
+        message: `Timed out waiting for ${label}. Hold BOOTSEL, plug in USB, and retry. Press RESET if the volume is missing.`,
+      };
     }
-    await delay(Math.min(VOLUME_POLL_MS, BOOTSEL_TIMEOUT_MS - elapsed), signal);
+    await delay(Math.min(VOLUME_POLL_MS, timeoutMs - elapsed), signal);
   }
 }
 
@@ -105,6 +123,12 @@ async function loadPayload(project: Project | null): Promise<{
     project ? exportSequence(project) : Promise.resolve(emptySequence()),
   ]);
   return { manifest, volumes, sequence };
+}
+
+/** Re-export at write time so File→Open during the wizard cannot flash a stale sequence. */
+async function resolveSequence(): Promise<Sequence> {
+  const project = useEditor.getState().project;
+  return project ? exportSequence(project) : emptySequence();
 }
 
 function phaseCopy(phase: Phase, mode: InstallMode): string {
@@ -145,21 +169,49 @@ function canDismiss(phase: Phase): boolean {
   );
 }
 
+function pickResumeCircuitpy(
+  volumes: PicoVolume[],
+  lastId: string | null,
+  excludeIds: ReadonlySet<string>,
+): PicoVolume | undefined {
+  if (lastId) {
+    const same = volumes.find(
+      (volume) =>
+        volume.id === lastId && volume.kind === "Circuitpy" && volume.writable,
+    );
+    if (same) {
+      return same;
+    }
+  }
+  return nextWritableCircuitpy(volumes, excludeIds);
+}
+
 export function InstallWizard({ onClose }: { onClose: () => void }) {
   const titleId = useId();
   const project = useEditor((s) => s.project);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const genRef = useRef(0);
+  const phaseRef = useRef<Phase>("loading");
+  const phaseBPendingRef = useRef(false);
+  const excludeCircuitpyIdsRef = useRef<Set<string>>(new Set());
+  const lastCircuitpyIdRef = useRef<string | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("loading");
+  const [phase, setPhaseState] = useState<Phase>("loading");
   const [mode, setMode] = useState<InstallMode>("full");
   const [volumes, setVolumes] = useState<PicoVolume[]>([]);
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const [runtimeVersion, setRuntimeVersion] = useState<string | null>(null);
   const [offerVolume, setOfferVolume] = useState<PicoVolume | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [logError, setLogError] = useState<string | null>(null);
+
+  const setPhase = useCallback((next: Phase) => {
+    phaseRef.current = next;
+    setPhaseState(next);
+  }, []);
 
   const begin = useCallback(() => {
     abortRef.current?.abort();
@@ -175,48 +227,128 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
     if (!still(gen) || isAbortError(err)) {
       return;
     }
-    setError(errorMessage(err));
+    const app = asAppError(err);
+    const message = errorMessage(err);
+    const code = app?.code ?? null;
+    setError(message);
+    setErrorCode(code);
+    void logWizardError({
+      phase: phaseRef.current,
+      code: code ?? "unknown",
+      message,
+    }).catch(() => {
+      // AppLog is best-effort; the in-wizard message still shows.
+    });
     setPhase("error");
-  }, [still]);
+  }, [setPhase, still]);
 
-  const runFullInstall = useCallback(
-    async (signal: AbortSignal, payload: Sequence, gen: number) => {
-      setMode("full");
-      setOfferVolume(null);
-      setPhase("bootsel");
-      const rp2 = await pollForRp2(setVolumes, signal);
+  const writeFullRuntime = useCallback(
+    async (volume: PicoVolume, gen: number) => {
+      lastCircuitpyIdRef.current = volume.id;
+      const payload = await resolveSequence();
       if (!still(gen)) {
         return;
       }
-      setPhase("flashing");
-      await flashUf2(rp2.id);
-      if (!still(gen)) {
-        return;
-      }
-      setPhase("wait-circuitpy");
-      const circuitpy = await waitForVolume("Circuitpy", CIRCUITPY_TIMEOUT_MS);
-      if (!still(gen)) {
-        return;
-      }
-      setVolumes([circuitpy]);
+      setSequence(payload);
       setPhase("writing");
-      await writeCircuitpy(circuitpy.id, payload);
+      await writeCircuitpy(volume.id, payload);
+      phaseBPendingRef.current = false;
       if (!still(gen)) {
         return;
       }
       setPhase("ejecting");
-      await ejectVolume(circuitpy.id);
+      await ejectVolume(volume.id);
       if (!still(gen)) {
         return;
       }
       setPhase("done");
     },
-    [still],
+    [setPhase, still],
+  );
+
+  const runFullInstall = useCallback(
+    async (signal: AbortSignal, gen: number) => {
+      setMode("full");
+      setOfferVolume(null);
+      phaseBPendingRef.current = false;
+      setPhase("bootsel");
+      const rp2 = await pollForWritable(
+        "RpiRp2",
+        BOOTSEL_TIMEOUT_MS,
+        setVolumes,
+        signal,
+        (listed) => firstWritable(listed, "RpiRp2"),
+      );
+      if (!still(gen)) {
+        return;
+      }
+      const before = await listPicoVolumes();
+      if (!still(gen)) {
+        return;
+      }
+      setVolumes(before);
+      excludeCircuitpyIdsRef.current = circuitpyIds(before);
+      setPhase("flashing");
+      await flashUf2(rp2.id);
+      phaseBPendingRef.current = true;
+      if (!still(gen)) {
+        return;
+      }
+      setPhase("wait-circuitpy");
+      const exclude = excludeCircuitpyIdsRef.current;
+      const circuitpy = await pollForWritable(
+        "Circuitpy",
+        CIRCUITPY_TIMEOUT_MS,
+        setVolumes,
+        signal,
+        (listed) => nextWritableCircuitpy(listed, exclude),
+      );
+      if (!still(gen)) {
+        return;
+      }
+      await writeFullRuntime(circuitpy, gen);
+    },
+    [setPhase, still, writeFullRuntime],
+  );
+
+  const resumePhaseB = useCallback(
+    async (signal: AbortSignal, gen: number) => {
+      setMode("full");
+      setOfferVolume(null);
+      setPhase("wait-circuitpy");
+      const exclude = excludeCircuitpyIdsRef.current;
+      const lastId = lastCircuitpyIdRef.current;
+      const listed = await listPicoVolumes();
+      if (!still(gen)) {
+        return;
+      }
+      setVolumes(listed);
+      const existing = pickResumeCircuitpy(listed, lastId, exclude);
+      const circuitpy =
+        existing ??
+        (await pollForWritable(
+          "Circuitpy",
+          CIRCUITPY_TIMEOUT_MS,
+          setVolumes,
+          signal,
+          (vols) => pickResumeCircuitpy(vols, lastId, exclude),
+        ));
+      if (!still(gen)) {
+        return;
+      }
+      await writeFullRuntime(circuitpy, gen);
+    },
+    [setPhase, still, writeFullRuntime],
   );
 
   const runSequenceUpdate = useCallback(
-    async (volume: PicoVolume, payload: Sequence, gen: number) => {
+    async (volume: PicoVolume, gen: number) => {
       setMode("sequence");
+      const payload = await resolveSequence();
+      if (!still(gen)) {
+        return;
+      }
+      setSequence(payload);
       setPhase("writing");
       await writeSequenceOnly(volume.id, payload);
       if (!still(gen)) {
@@ -229,13 +361,16 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
       }
       setPhase("done");
     },
-    [still],
+    [setPhase, still],
   );
 
   const startFromScan = useCallback(async () => {
     const { signal, gen } = begin();
     setError(null);
+    setErrorCode(null);
     setLogError(null);
+    phaseBPendingRef.current = false;
+    lastCircuitpyIdRef.current = null;
     setPhase("loading");
     try {
       const loaded = await loadPayload(useEditor.getState().project);
@@ -255,11 +390,11 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
         setPhase("offer");
         return;
       }
-      await runFullInstall(signal, loaded.sequence, gen);
+      await runFullInstall(signal, gen);
     } catch (err) {
       fail(gen, err);
     }
-  }, [begin, fail, runFullInstall, still]);
+  }, [begin, fail, runFullInstall, setPhase, still]);
 
   useEffect(() => {
     void startFromScan();
@@ -267,6 +402,10 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
       abortRef.current?.abort();
     };
   }, [startFromScan]);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   const dismissible = canDismiss(phase);
 
@@ -283,31 +422,78 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         requestClose();
+        return;
+      }
+      const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier || event.altKey || event.shiftKey) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "n" || key === "o" || key === "s") {
+        event.preventDefault();
+        event.stopPropagation();
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [requestClose]);
 
+  const onDialogKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") {
+      return;
+    }
+    const root = dialogRef.current;
+    if (!root) {
+      return;
+    }
+    const focusable = [
+      ...root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
+
   const onUpdateSequence = useCallback(() => {
-    if (!sequence || !offerVolume) {
+    if (!offerVolume) {
       return;
     }
     const { gen } = begin();
     setError(null);
-    void runSequenceUpdate(offerVolume, sequence, gen).catch((err) =>
-      fail(gen, err),
-    );
-  }, [begin, fail, offerVolume, runSequenceUpdate, sequence]);
+    setErrorCode(null);
+    void runSequenceUpdate(offerVolume, gen).catch((err) => fail(gen, err));
+  }, [begin, fail, offerVolume, runSequenceUpdate]);
 
   const onFullInstall = useCallback(() => {
-    if (!sequence) {
-      return;
-    }
     const { signal, gen } = begin();
     setError(null);
-    void runFullInstall(signal, sequence, gen).catch((err) => fail(gen, err));
-  }, [begin, fail, runFullInstall, sequence]);
+    setErrorCode(null);
+    void runFullInstall(signal, gen).catch((err) => fail(gen, err));
+  }, [begin, fail, runFullInstall]);
+
+  const onRetry = useCallback(() => {
+    setError(null);
+    setErrorCode(null);
+    setLogError(null);
+    if (phaseBPendingRef.current) {
+      const { signal, gen } = begin();
+      void resumePhaseB(signal, gen).catch((err) => fail(gen, err));
+      return;
+    }
+    void startFromScan();
+  }, [begin, fail, resumePhaseB, startFromScan]);
 
   const onOpenLog = useCallback(() => {
     setLogError(null);
@@ -316,14 +502,19 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
 
   const busyWrite =
     phase === "flashing" || phase === "writing" || phase === "ejecting";
+  const showResetHint =
+    phase === "error" && error != null && shouldShowResetHint(errorCode, error);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-lg rounded-lg border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/50"
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
+        className="w-full max-w-lg rounded-lg border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/50 outline-none"
       >
         <header className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
           <h2
@@ -396,13 +587,18 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
             </div>
           ) : null}
 
-          {phase === "error" ? (
+          {showResetHint ? (
             <div className="flex items-start gap-2 text-sm text-red-400">
               <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <p>
                 Press RESET on the Pico and retry. If the volume is missing,
                 re-enter BOOTSEL.
               </p>
+            </div>
+          ) : phase === "error" ? (
+            <div className="flex items-start gap-2 text-sm text-red-400">
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <p>See the log for details.</p>
             </div>
           ) : null}
 
@@ -433,7 +629,7 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 type="button"
-                onClick={() => void startFromScan()}
+                onClick={onRetry}
                 className="rounded-md bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white"
               >
                 Retry
