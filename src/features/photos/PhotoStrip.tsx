@@ -23,6 +23,7 @@ export function PhotoStrip() {
   const setSelection = useEditor((s) => s.setSelection);
   const setProject = useEditor((s) => s.setProject);
   const setNormalize = useEditor((s) => s.setNormalize);
+  const photoRev = useEditor((s) => s.photoRev);
   const photos = project?.photos ?? [];
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -116,6 +117,7 @@ export function PhotoStrip() {
                         relativePath={relative}
                         alt={photoLabel(photo)}
                         className="h-full w-full object-cover"
+                        cacheKey={String(photoRev[photo.id] ?? 0)}
                       />
                     ) : (
                       <ImageIcon className="h-5 w-5 text-zinc-600" aria-hidden />

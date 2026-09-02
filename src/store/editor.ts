@@ -25,12 +25,15 @@ type EditorState = {
   playheadMs: number;
   dirty: boolean;
   normalize: NormalizeSession | null;
+  /** Bumped after each warp so `convertFileSrc` URLs are not reused. */
+  photoRev: Record<string, number>;
   openProject: (project: Project, projectDir: string) => void;
   setProject: (project: Project) => void;
   setSelection: (selection: Selection) => void;
   setPlayheadMs: (playheadMs: number) => void;
   setNormalize: (normalize: NormalizeSession | null) => void;
   setNormalizeCorners: (corners: Quad) => void;
+  bumpPhotoRev: (photoId: string) => void;
   markDirty: () => void;
   markClean: () => void;
 };
@@ -42,6 +45,7 @@ export const useEditor = create<EditorState>((set) => ({
   playheadMs: 0,
   dirty: false,
   normalize: null,
+  photoRev: {},
   openProject: (project, projectDir) =>
     set({
       project,
@@ -50,6 +54,7 @@ export const useEditor = create<EditorState>((set) => ({
       selection: null,
       playheadMs: 0,
       normalize: null,
+      photoRev: {},
     }),
   setProject: (project) => set({ project, dirty: true }),
   setSelection: (selection) => set({ selection }),
@@ -59,6 +64,10 @@ export const useEditor = create<EditorState>((set) => ({
     set((state) =>
       state.normalize ? { normalize: { ...state.normalize, corners } } : state,
     ),
+  bumpPhotoRev: (photoId) =>
+    set((state) => ({
+      photoRev: { ...state.photoRev, [photoId]: (state.photoRev[photoId] ?? 0) + 1 },
+    })),
   markDirty: () => set({ dirty: true }),
   markClean: () => set({ dirty: false }),
 }));

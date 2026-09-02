@@ -89,14 +89,14 @@ export function insetRectangle(
   height: number,
   frac = 0.05,
 ): [Point, Point, Point, Point] {
-  const x0 = width * frac;
-  const y0 = height * frac;
-  const x1 = width * (1 - frac);
-  const y1 = height * (1 - frac);
+  const mx = Math.min(width * frac, width / 2);
+  const my = Math.min(height * frac, height / 2);
+  const x1 = Math.max(width - 1 - mx, mx);
+  const y1 = Math.max(height - 1 - my, my);
   return [
-    { x: x0, y: y0 },
-    { x: x1, y: y0 },
+    { x: mx, y: my },
+    { x: x1, y: my },
     { x: x1, y: y1 },
-    { x: x0, y: y1 },
+    { x: mx, y: y1 },
   ];
 }

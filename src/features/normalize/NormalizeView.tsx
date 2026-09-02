@@ -32,12 +32,20 @@ function photoById(photos: Photo[], id: string): Photo | undefined {
   return photos.find((photo) => photo.id === id);
 }
 
+function stillSelected(photoId: string): boolean {
+  const selection = useEditor.getState().selection;
+  return selection?.type === "photo" && selection.id === photoId;
+}
+
 async function detectIntoSession(
   photo: Photo,
   preferExisting: boolean,
 ): Promise<void> {
   const { setNormalize } = useEditor.getState();
   if (preferExisting && photo.corners) {
+    if (!stillSelected(photo.id)) {
+      return;
+    }
     setNormalize({
       photoId: photo.id,
       corners: photo.corners,
@@ -73,11 +81,6 @@ async function detectIntoSession(
   }
 }
 
-function stillSelected(photoId: string): boolean {
-  const selection = useEditor.getState().selection;
-  return selection?.type === "photo" && selection.id === photoId;
-}
-
 function appendClipIfNeeded(clips: Clip[], warped: Photo): Clip[] {
   if (clips.some((clip) => clip.photoId === warped.id)) {
     return clips;
@@ -100,10 +103,12 @@ export function NormalizeView() {
   const projectDir = useEditor((s) => s.projectDir);
   const selection = useEditor((s) => s.selection);
   const normalize = useEditor((s) => s.normalize);
+  const photoRev = useEditor((s) => s.photoRev);
   const setProject = useEditor((s) => s.setProject);
   const setSelection = useEditor((s) => s.setSelection);
   const setNormalize = useEditor((s) => s.setNormalize);
   const setNormalizeCorners = useEditor((s) => s.setNormalizeCorners);
+  const bumpPhotoRev = useEditor((s) => s.bumpPhotoRev);
 
   const selectedPhoto =
     project && selection?.type === "photo"
@@ -112,29 +117,34 @@ export function NormalizeView() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [forceEdit, setForceEdit] = useState(false);
+  const [forceEditId, setForceEditId] = useState<string | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageBox, setStageBox] = useState<Rect>(EMPTY_RECT);
 
+  const forceEdit =
+    !!selectedPhoto && forceEditId === selectedPhoto.id;
+  const session =
+    selectedPhoto && normalize?.photoId === selectedPhoto.id ? normalize : null;
   const editing =
-    !!selectedPhoto &&
-    (!selectedPhoto.normalized || forceEdit || normalize?.photoId === selectedPhoto.id);
+    !!selectedPhoto && (!selectedPhoto.normalized || forceEdit);
 
   useEffect(() => {
-    setForceEdit(false);
     setError(null);
   }, [selectedPhoto?.id]);
 
   useEffect(() => {
+    if (normalize && normalize.photoId !== selectedPhoto?.id) {
+      setNormalize(null);
+    }
+  }, [normalize, selectedPhoto?.id, setNormalize]);
+
+  useEffect(() => {
     if (!selectedPhoto || !editing) {
-      if (normalize && selectedPhoto && normalize.photoId !== selectedPhoto.id) {
-        setNormalize(null);
-      }
       setBusy(false);
       return;
     }
-    if (normalize?.photoId === selectedPhoto.id) {
+    if (session) {
       return;
     }
     const photo = selectedPhoto;
@@ -148,7 +158,7 @@ export function NormalizeView() {
     return () => {
       cancelled = true;
     };
-  }, [editing, forceEdit, normalize?.photoId, selectedPhoto, setNormalize]);
+  }, [editing, forceEdit, session?.photoId, selectedPhoto]);
 
   const measure = useCallback(() => {
     const el = stageRef.current;
@@ -176,26 +186,45 @@ export function NormalizeView() {
 
   const onConfirm = useCallback(async () => {
     const state = useEditor.getState();
-    const session = state.normalize;
     const current = state.project;
-    if (!session || !current || busy) {
+    const selectedId =
+      state.selection?.type === "photo" ? state.selection.id : null;
+    const currentSession = state.normalize;
+    if (
+      !currentSession ||
+      !current ||
+      !selectedId ||
+      currentSession.photoId !== selectedId ||
+      busy
+    ) {
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const warped = await warpPhoto(session.photoId, session.corners);
+      const warped = await warpPhoto(
+        currentSession.photoId,
+        currentSession.corners,
+      );
       const latest = useEditor.getState().project ?? current;
+      const appended = !latest.clips.some((clip) => clip.photoId === warped.id);
       const photos = latest.photos.map((photo) =>
         photo.id === warped.id ? warped : photo,
       );
       const clips = appendClipIfNeeded(latest.clips, warped);
       setProject({ ...latest, photos, clips });
-      setForceEdit(false);
-      setNormalize(null);
-      const next = photos.find((photo) => !photo.normalized);
-      if (next) {
-        setSelection({ type: "photo", id: next.id });
+      bumpPhotoRev(warped.id);
+      const live = useEditor.getState().normalize;
+      if (live?.photoId === warped.id) {
+        setNormalize(null);
+      }
+      setForceEditId((id) => (id === warped.id ? null : id));
+      if (!stillSelected(warped.id)) {
+        return;
+      }
+      if (appended) {
+        const next = photos.find((photo) => !photo.normalized);
+        setSelection({ type: "photo", id: next?.id ?? warped.id });
       } else {
         setSelection({ type: "photo", id: warped.id });
       }
@@ -204,10 +233,10 @@ export function NormalizeView() {
     } finally {
       setBusy(false);
     }
-  }, [busy, setNormalize, setProject, setSelection]);
+  }, [busy, bumpPhotoRev, setNormalize, setProject, setSelection]);
 
   const onRedetect = useCallback(async () => {
-    if (!selectedPhoto || busy) {
+    if (!selectedPhoto || busy || !editing) {
       return;
     }
     setBusy(true);
@@ -217,7 +246,7 @@ export function NormalizeView() {
     } finally {
       setBusy(false);
     }
-  }, [busy, selectedPhoto]);
+  }, [busy, editing, selectedPhoto]);
 
   if (!project) {
     return (
@@ -250,6 +279,7 @@ export function NormalizeView() {
               relativePath={warped}
               alt="Warped screen"
               className="h-full w-full object-contain"
+              cacheKey={String(photoRev[selectedPhoto.id] ?? 0)}
             />
           ) : (
             <Empty
@@ -264,8 +294,10 @@ export function NormalizeView() {
             type="button"
             className="pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
             onClick={() => {
-              setForceEdit(true);
-              setNormalize(null);
+              setForceEditId(selectedPhoto.id);
+              if (normalize?.photoId !== selectedPhoto.id) {
+                setNormalize(null);
+              }
             }}
           >
             <Crop className="h-3.5 w-3.5" aria-hidden />
@@ -276,17 +308,17 @@ export function NormalizeView() {
     );
   }
 
-  const imageWidth = normalize?.imageWidth ?? selectedPhoto.width;
-  const imageHeight = normalize?.imageHeight ?? selectedPhoto.height;
+  const imageWidth = session?.imageWidth ?? selectedPhoto.width;
+  const imageHeight = session?.imageHeight ?? selectedPhoto.height;
   const corners: Quad =
-    normalize?.corners ?? insetRectangle(imageWidth, imageHeight);
+    session?.corners ?? insetRectangle(imageWidth, imageHeight);
   const displayed = containRect(
     { left: 0, top: 0, width: stageBox.width, height: stageBox.height },
     imageWidth,
     imageHeight,
   );
   const lowConfidence =
-    (normalize?.confidence ?? 0) < DETECT_CONFIDENCE_THRESHOLD;
+    (session?.confidence ?? 0) < DETECT_CONFIDENCE_THRESHOLD;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-zinc-950">
@@ -298,7 +330,7 @@ export function NormalizeView() {
           className="h-full w-full object-contain"
           onLoad={() => setLayoutTick((n) => n + 1)}
         />
-        {normalize ? (
+        {session ? (
           <Handles
             corners={corners}
             imageWidth={imageWidth}
@@ -310,14 +342,14 @@ export function NormalizeView() {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/80 px-3 py-2">
         <p className="min-w-0 text-xs text-zinc-500">
-          {!normalize && busy
+          {!session && busy
             ? "Detecting screen corners…"
             : lowConfidence
               ? "Low confidence — drag the corners onto the screen."
               : "Confirm the overlay, or drag a corner to adjust."}
-          {normalize ? (
+          {session ? (
             <span className="ml-2 text-zinc-600">
-              {normalize.confidence.toFixed(2)}
+              {session.confidence.toFixed(2)}
             </span>
           ) : null}
         </p>
@@ -333,7 +365,7 @@ export function NormalizeView() {
           </button>
           <button
             type="button"
-            disabled={busy || !normalize}
+            disabled={busy || !session}
             onClick={() => void onConfirm()}
             className="inline-flex items-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
           >

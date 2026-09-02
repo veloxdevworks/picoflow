@@ -7,6 +7,8 @@ type Props = {
   relativePath: string;
   alt: string;
   className?: string;
+  /** Changes on each warp so asset-protocol and blob URLs are not reused. */
+  cacheKey?: string;
   onLoad?: () => void;
 };
 
@@ -25,9 +27,13 @@ function toUint8(bytes: number[] | Uint8Array): Uint8Array {
   return bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
 }
 
-function assetSrc(projectDir: string, relativePath: string): string | null {
+function assetSrc(
+  projectDir: string,
+  relativePath: string,
+  cacheKey?: string,
+): string | null {
   try {
-    return photoUrl(projectDir, relativePath);
+    return photoUrl(projectDir, relativePath, cacheKey);
   } catch {
     return null;
   }
@@ -39,18 +45,19 @@ export function ProjectPhoto({
   relativePath,
   alt,
   className,
+  cacheKey,
   onLoad,
 }: Props) {
   const [src, setSrc] = useState<string | null>(() =>
-    assetSrc(projectDir, relativePath),
+    assetSrc(projectDir, relativePath, cacheKey),
   );
   const [fallback, setFallback] = useState(src === null);
 
   useEffect(() => {
-    const next = assetSrc(projectDir, relativePath);
+    const next = assetSrc(projectDir, relativePath, cacheKey);
     setSrc(next);
     setFallback(next === null);
-  }, [projectDir, relativePath]);
+  }, [projectDir, relativePath, cacheKey]);
 
   useEffect(() => {
     if (!fallback) {
@@ -83,7 +90,7 @@ export function ProjectPhoto({
         URL.revokeObjectURL(state.url);
       }
     };
-  }, [fallback, relativePath]);
+  }, [fallback, relativePath, cacheKey]);
 
   if (!src) {
     return <div className={className} aria-hidden />;
@@ -91,6 +98,7 @@ export function ProjectPhoto({
 
   return (
     <img
+      key={`${relativePath}:${cacheKey ?? ""}`}
       src={src}
       alt={alt}
       className={className}

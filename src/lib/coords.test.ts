@@ -89,12 +89,12 @@ describe("pointerToImagePx", () => {
 });
 
 describe("insetRectangle", () => {
-  it("returns TL TR BR BL at 5%", () => {
+  it("matches Rust detect fallback (5% inset, inner edge width-1)", () => {
     expect(insetRectangle(100, 200)).toEqual([
       { x: 5, y: 10 },
-      { x: 95, y: 10 },
-      { x: 95, y: 190 },
-      { x: 5, y: 190 },
+      { x: 94, y: 10 },
+      { x: 94, y: 189 },
+      { x: 5, y: 189 },
     ]);
   });
 });
