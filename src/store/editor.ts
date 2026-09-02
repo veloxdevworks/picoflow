@@ -57,8 +57,24 @@ export const useEditor = create<EditorState>((set) => ({
       photoRev: {},
     }),
   setProject: (project) => set({ project, dirty: true }),
-  setSelection: (selection) => set({ selection }),
-  setPlayheadMs: (playheadMs) => set({ playheadMs }),
+  setSelection: (selection) =>
+    set((state) => {
+      const current = state.selection;
+      if (current === selection) {
+        return state;
+      }
+      if (
+        current &&
+        selection &&
+        current.type === selection.type &&
+        current.id === selection.id
+      ) {
+        return state;
+      }
+      return { selection };
+    }),
+  setPlayheadMs: (playheadMs) =>
+    set((state) => (state.playheadMs === playheadMs ? state : { playheadMs })),
   setNormalize: (normalize) => set({ normalize }),
   setNormalizeCorners: (corners) =>
     set((state) =>

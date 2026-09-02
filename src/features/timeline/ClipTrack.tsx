@@ -74,6 +74,8 @@ export function ClipTrack({
   onSelect,
   onClipPointerDown,
   onEdgePointerDown,
+  onResizeKey,
+  resizeStepMs,
 }: {
   clips: readonly Clip[];
   photos: readonly Photo[];
@@ -87,6 +89,8 @@ export function ClipTrack({
   onSelect: (clipId: string) => void;
   onClipPointerDown: (clipId: string, event: PointerEvent<HTMLElement>) => void;
   onEdgePointerDown: (clipId: string, event: PointerEvent<HTMLElement>) => void;
+  onResizeKey: (clipId: string, deltaMs: number) => void;
+  resizeStepMs: number;
 }) {
   const laidOut = layoutClips(clips, pxPerMs, rubberBand, reorderIds);
 
@@ -97,13 +101,14 @@ export function ClipTrack({
         const relative = photo?.warpedPath ?? photo?.rawPath ?? null;
         const selected = selectedId === clip.id;
         const dragging = draggingId === clip.id;
+        const label = `${photoLabel(photo, clip.id)}, ${formatDuration(durationMs)}`;
         return (
           <div
             key={clip.id}
-            role="button"
+            role="group"
             tabIndex={0}
-            aria-label={`${photoLabel(photo, clip.id)}, ${formatDuration(durationMs)}`}
-            aria-pressed={selected}
+            aria-label={label}
+            aria-current={selected ? "true" : undefined}
             className={`absolute inset-y-1 overflow-hidden rounded-sm border text-left touch-none ${
               selected
                 ? "border-sky-400 z-10"
@@ -122,6 +127,14 @@ export function ClipTrack({
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 onSelect(clip.id);
+                return;
+              }
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                onResizeKey(
+                  clip.id,
+                  event.key === "ArrowRight" ? resizeStepMs : -resizeStepMs,
+                );
               }
             }}
           >
@@ -139,10 +152,9 @@ export function ClipTrack({
             <div className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-zinc-950/70 px-1 py-0.5 text-[10px] text-zinc-200">
               {formatDuration(durationMs)}
             </div>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize clip"
+            <button
+              type="button"
+              aria-label={`Resize ${label}`}
               className="absolute inset-y-0 right-0 z-20 w-2 cursor-ew-resize touch-none hover:bg-sky-400/40"
               onPointerDown={(event) => {
                 event.stopPropagation();
@@ -152,6 +164,16 @@ export function ClipTrack({
                 }
                 onSelect(clip.id);
                 onEdgePointerDown(clip.id, event);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onResizeKey(
+                    clip.id,
+                    event.key === "ArrowRight" ? resizeStepMs : -resizeStepMs,
+                  );
+                }
               }}
             />
           </div>

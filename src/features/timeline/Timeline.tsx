@@ -21,26 +21,30 @@ import { ClipTrack, type RubberBand } from "./ClipTrack";
 import { Playhead } from "./Playhead";
 
 const REORDER_SLOP_PX = 6;
+const RESIZE_STEP_MS = 100;
 
-type Drag =
-  | {
-      kind: "ripple";
-      clipId: string;
-      originDuration: number;
-      originX: number;
-      pointerId: number;
-    }
-  | {
-      kind: "reorder";
-      clipId: string;
-      fromIndex: number;
-      originIds: string[];
-      originClips: Clip[];
-      originX: number;
-      pointerId: number;
-      started: boolean;
-    }
-  | { kind: "scrub"; pointerId: number };
+type RippleDrag = {
+  kind: "ripple";
+  clipId: string;
+  originDuration: number;
+  originX: number;
+  pointerId: number;
+  durationMs: number;
+};
+
+type ReorderDrag = {
+  kind: "reorder";
+  clipId: string;
+  fromIndex: number;
+  originIds: string[];
+  originClips: Clip[];
+  originX: number;
+  pointerId: number;
+  started: boolean;
+  orderedIds: string[];
+};
+
+type Drag = RippleDrag | ReorderDrag | { kind: "scrub"; pointerId: number };
 
 function sameIds(a: readonly string[] | null, b: readonly string[]): boolean {
   if (!a || a.length !== b.length) {
@@ -70,6 +74,23 @@ function indexAtMs(clips: readonly Clip[], ms: number): number {
     }
   }
   return clips.length - 1;
+}
+
+function rippleDurationAt(
+  drag: RippleDrag,
+  clientX: number,
+  pxPerMs: number,
+): number {
+  if (!(pxPerMs > 0)) {
+    return drag.durationMs;
+  }
+  return clampClipDurationMs(
+    drag.originDuration + (clientX - drag.originX) / pxPerMs,
+  );
+}
+
+function reorderIdsAt(drag: ReorderDrag, ms: number): string[] {
+  return moveId(drag.originIds, drag.fromIndex, indexAtMs(drag.originClips, ms));
 }
 
 function tickStepMs(totalMs: number): number {
@@ -117,11 +138,11 @@ export function Timeline() {
   const pxPerMsRef = useRef(0);
   const totalMsRef = useRef(0);
   const clipsRef = useRef(clips);
-  const rubberBandRef = useRef<RubberBand | null>(null);
-  const reorderIdsRef = useRef<string[] | null>(null);
   const listenersRef = useRef<{
     move: (event: PointerEvent) => void;
     up: (event: PointerEvent) => void;
+    cancel: (event: PointerEvent) => void;
+    target: HTMLElement;
   } | null>(null);
 
   const [width, setWidth] = useState(0);
@@ -134,8 +155,6 @@ export function Timeline() {
   pxPerMsRef.current = pxPerMs;
   totalMsRef.current = totalMs;
   clipsRef.current = clips;
-  rubberBandRef.current = rubberBand;
-  reorderIdsRef.current = reorderIds;
 
   const measure = useCallback(() => {
     const el = trackRef.current;
@@ -166,16 +185,44 @@ export function Timeline() {
     return clampPlayheadMs(x / scale, totalMsRef.current);
   }, []);
 
+  const selectClipAt = useCallback(
+    (source: readonly Clip[], ms: number) => {
+      const clip = clipAt(source, ms);
+      if (!clip) {
+        return;
+      }
+      const current = useEditor.getState().selection;
+      if (current?.type === "clip" && current.id === clip.id) {
+        return;
+      }
+      setSelection({ type: "clip", id: clip.id });
+    },
+    [setSelection],
+  );
+
   const applyPlayhead = useCallback(
     (ms: number) => {
       const next = clampPlayheadMs(ms, totalMsRef.current);
-      setPlayheadMs(next);
-      const clip = clipAt(clipsRef.current, next);
-      if (clip) {
-        setSelection({ type: "clip", id: clip.id });
+      if (useEditor.getState().playheadMs !== next) {
+        setPlayheadMs(next);
       }
+      selectClipAt(clipsRef.current, next);
     },
-    [setPlayheadMs, setSelection],
+    [selectClipAt, setPlayheadMs],
+  );
+
+  const alignToPlayhead = useCallback(
+    (nextClips: readonly Clip[]) => {
+      const ms = clampPlayheadMs(
+        useEditor.getState().playheadMs,
+        totalDurationMs(nextClips),
+      );
+      if (useEditor.getState().playheadMs !== ms) {
+        setPlayheadMs(ms);
+      }
+      selectClipAt(nextClips, ms);
+    },
+    [selectClipAt, setPlayheadMs],
   );
 
   const stopListening = useCallback(() => {
@@ -185,22 +232,34 @@ export function Timeline() {
     }
     window.removeEventListener("pointermove", listeners.move);
     window.removeEventListener("pointerup", listeners.up);
-    window.removeEventListener("pointercancel", listeners.up);
+    window.removeEventListener("pointercancel", listeners.cancel);
+    listeners.target.removeEventListener("lostpointercapture", listeners.cancel);
     listenersRef.current = null;
+  }, []);
+
+  const clearPreview = useCallback(() => {
+    setRubberBand(null);
+    setReorderIds(null);
+    setDraggingId(null);
   }, []);
 
   const commitRipple = useCallback(
     async (clipId: string, durationMs: number, originDuration: number) => {
-      const current = useEditor.getState().project;
-      if (!current || durationMs === originDuration) {
+      const snapshot = useEditor.getState().project;
+      if (!snapshot || durationMs === originDuration) {
         setRubberBand(null);
         return;
       }
       busyRef.current = true;
       setError(null);
       try {
-        const next = await rippleClip(current, clipId, durationMs);
+        const next = await rippleClip(snapshot, clipId, durationMs);
+        if (useEditor.getState().project !== snapshot) {
+          setError("Timeline edit discarded because the project changed.");
+          return;
+        }
         setProject(next);
+        alignToPlayhead(next.clips);
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -208,31 +267,34 @@ export function Timeline() {
         busyRef.current = false;
       }
     },
-    [setProject],
+    [alignToPlayhead, setProject],
   );
 
   const commitReorder = useCallback(
     async (originIds: string[], nextIds: string[]) => {
-      const current = useEditor.getState().project;
-      if (!current || sameIds(originIds, nextIds)) {
-        setReorderIds(null);
-        setDraggingId(null);
+      const snapshot = useEditor.getState().project;
+      if (!snapshot || sameIds(originIds, nextIds)) {
+        clearPreview();
         return;
       }
       busyRef.current = true;
       setError(null);
       try {
-        const next = await reorderClips(current, nextIds);
+        const next = await reorderClips(snapshot, nextIds);
+        if (useEditor.getState().project !== snapshot) {
+          setError("Timeline edit discarded because the project changed.");
+          return;
+        }
         setProject(next);
+        alignToPlayhead(next.clips);
       } catch (err) {
         setError(errorMessage(err));
       } finally {
-        setReorderIds(null);
-        setDraggingId(null);
+        clearPreview();
         busyRef.current = false;
       }
     },
-    [setProject],
+    [alignToPlayhead, clearPreview, setProject],
   );
 
   const onMove = useCallback(
@@ -242,13 +304,12 @@ export function Timeline() {
         return;
       }
       if (drag.kind === "ripple") {
-        const scale = pxPerMsRef.current;
-        if (!(scale > 0)) {
-          return;
-        }
-        const durationMs = clampClipDurationMs(
-          drag.originDuration + (event.clientX - drag.originX) / scale,
+        const durationMs = rippleDurationAt(
+          drag,
+          event.clientX,
+          pxPerMsRef.current,
         );
+        drag.durationMs = durationMs;
         setRubberBand((prev) =>
           prev?.clipId === drag.clipId && prev.durationMs === durationMs
             ? prev
@@ -263,10 +324,12 @@ export function Timeline() {
         ) {
           return;
         }
-        drag.started = true;
-        setDraggingId(drag.clipId);
-        const to = indexAtMs(drag.originClips, clientXToMs(event.clientX));
-        const ids = moveId(drag.originIds, drag.fromIndex, to);
+        if (!drag.started) {
+          drag.started = true;
+          setDraggingId(drag.clipId);
+        }
+        const ids = reorderIdsAt(drag, clientXToMs(event.clientX));
+        drag.orderedIds = ids;
         setReorderIds((prev) => (sameIds(prev, ids) ? prev : ids));
         return;
       }
@@ -285,33 +348,61 @@ export function Timeline() {
       stopListening();
 
       if (drag.kind === "scrub") {
+        applyPlayhead(clientXToMs(event.clientX));
         return;
       }
       if (drag.kind === "ripple") {
-        const durationMs =
-          rubberBandRef.current?.clipId === drag.clipId
-            ? rubberBandRef.current.durationMs
-            : drag.originDuration;
+        const durationMs = rippleDurationAt(
+          drag,
+          event.clientX,
+          pxPerMsRef.current,
+        );
         void commitRipple(drag.clipId, durationMs, drag.originDuration);
         return;
       }
       if (!drag.started) {
-        setReorderIds(null);
-        setDraggingId(null);
+        clearPreview();
         return;
       }
-      void commitReorder(drag.originIds, reorderIdsRef.current ?? drag.originIds);
+      void commitReorder(
+        drag.originIds,
+        reorderIdsAt(drag, clientXToMs(event.clientX)),
+      );
     },
-    [commitReorder, commitRipple, stopListening],
+    [
+      applyPlayhead,
+      clearPreview,
+      clientXToMs,
+      commitReorder,
+      commitRipple,
+      stopListening,
+    ],
   );
 
-  const startListening = useCallback(() => {
-    stopListening();
-    listenersRef.current = { move: onMove, up: onUp };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }, [onMove, onUp, stopListening]);
+  const onCancel = useCallback(
+    (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) {
+        return;
+      }
+      dragRef.current = null;
+      stopListening();
+      clearPreview();
+    },
+    [clearPreview, stopListening],
+  );
+
+  const startListening = useCallback(
+    (target: HTMLElement) => {
+      stopListening();
+      listenersRef.current = { move: onMove, up: onUp, cancel: onCancel, target };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      target.addEventListener("lostpointercapture", onCancel);
+    },
+    [onCancel, onMove, onUp, stopListening],
+  );
 
   useEffect(() => {
     return () => stopListening();
@@ -326,7 +417,7 @@ export function Timeline() {
       dragRef.current = { kind: "scrub", pointerId: event.pointerId };
       event.currentTarget.setPointerCapture(event.pointerId);
       applyPlayhead(clientXToMs(event.clientX));
-      startListening();
+      startListening(event.currentTarget);
     },
     [applyPlayhead, clientXToMs, startListening],
   );
@@ -342,17 +433,19 @@ export function Timeline() {
       }
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
+      const originIds = clipsRef.current.map((clip) => clip.id);
       dragRef.current = {
         kind: "reorder",
         clipId,
         fromIndex,
-        originIds: clipsRef.current.map((clip) => clip.id),
+        originIds,
         originClips: clipsRef.current.slice(),
         originX: event.clientX,
         pointerId: event.pointerId,
         started: false,
+        orderedIds: originIds,
       };
-      startListening();
+      startListening(event.currentTarget);
     },
     [startListening],
   );
@@ -374,9 +467,10 @@ export function Timeline() {
         originDuration: clip.durationMs,
         originX: event.clientX,
         pointerId: event.pointerId,
+        durationMs: clip.durationMs,
       };
       setRubberBand({ clipId, durationMs: clip.durationMs });
-      startListening();
+      startListening(event.currentTarget);
     },
     [startListening],
   );
@@ -387,18 +481,40 @@ export function Timeline() {
       if (!clip) {
         return;
       }
-      setSelection({ type: "clip", id: clipId });
-      const current = useEditor.getState().playheadMs;
-      if (clipAt(clipsRef.current, current)?.id !== clipId) {
+      const current = useEditor.getState().selection;
+      if (!(current?.type === "clip" && current.id === clipId)) {
+        setSelection({ type: "clip", id: clipId });
+      }
+      const playhead = useEditor.getState().playheadMs;
+      if (clipAt(clipsRef.current, playhead)?.id !== clipId) {
         setPlayheadMs(clip.startMs);
       }
     },
     [setPlayheadMs, setSelection],
   );
 
+  const onResizeKey = useCallback(
+    (clipId: string, deltaMs: number) => {
+      if (busyRef.current) {
+        return;
+      }
+      const clip = clipsRef.current.find((item) => item.id === clipId);
+      if (!clip) {
+        return;
+      }
+      onSelectClip(clipId);
+      const durationMs = clampClipDurationMs(clip.durationMs + deltaMs);
+      void commitRipple(clipId, durationMs, clip.durationMs);
+    },
+    [commitRipple, onSelectClip],
+  );
+
   const onSelectAction = useCallback(
     (actionId: string, atMs: number) => {
-      setSelection({ type: "action", id: actionId });
+      const current = useEditor.getState().selection;
+      if (!(current?.type === "action" && current.id === actionId)) {
+        setSelection({ type: "action", id: actionId });
+      }
       setPlayheadMs(clampPlayheadMs(atMs, totalMsRef.current));
     },
     [setPlayheadMs, setSelection],
@@ -486,6 +602,8 @@ export function Timeline() {
               onSelect={onSelectClip}
               onClipPointerDown={onClipPointerDown}
               onEdgePointerDown={onEdgePointerDown}
+              onResizeKey={onResizeKey}
+              resizeStepMs={RESIZE_STEP_MS}
             />
           </div>
           <div className="absolute inset-x-0 bottom-0 h-8">
