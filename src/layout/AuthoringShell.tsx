@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Cpu, GanttChart, Monitor, PanelRight } from "lucide-react";
+import { Cpu, GanttChart, PanelRight } from "lucide-react";
+import { NormalizeView } from "../features/normalize/NormalizeView";
 import { PhotoStrip } from "../features/photos/PhotoStrip";
 import { ProjectMenu } from "../features/project/ProjectMenu";
 import { useEditor } from "../store/editor";
@@ -58,15 +59,7 @@ export function AuthoringShell() {
       </aside>
 
       <section className="min-h-0 bg-zinc-950">
-        <Well
-          icon={<Monitor className="h-6 w-6" aria-hidden />}
-          label={project ? "No warped frame" : "No project open"}
-          hint={
-            project
-              ? "Imported photos will appear here after normalize."
-              : "File → New or Open to create a .picoflow project."
-          }
-        />
+        <NormalizeView />
       </section>
 
       <aside className="min-h-0 border-l border-zinc-800 bg-zinc-950">

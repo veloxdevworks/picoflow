@@ -1,5 +1,8 @@
 import type { Action, Clip } from "../types/generated";
 
+/** Matches `picoflow_core::DEFAULT_CLIP_DURATION_MS`. */
+export const DEFAULT_CLIP_DURATION_MS = 4000;
+
 /** Half-open clip lookup. `ms >= total` returns the last clip. */
 export function clipAt(clips: readonly Clip[], ms: number): Clip | undefined {
   if (clips.length === 0) {

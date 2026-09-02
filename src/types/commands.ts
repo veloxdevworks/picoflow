@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, Sequence } from "./generated";
+import type { Photo, Point, Project, Sequence } from "./generated";
 
 /** IPC error payload from Rust `AppError`. */
 export type AppError = {
@@ -90,4 +90,35 @@ export function exportSequence(project: Project): Promise<Sequence> {
 
 export function writeSequenceFile(sequence: Sequence): Promise<void> {
   return invoke("write_sequence_file", { sequence });
+}
+
+export type DetectResult = {
+  corners: [Point, Point, Point, Point];
+  confidence: number;
+  imageWidth: number;
+  imageHeight: number;
+};
+
+export type Quad = [Point, Point, Point, Point];
+
+/** Native multi-file picker. Paths must be passed unchanged to `importPhotos`. */
+export function pickImportPhotos(): Promise<string[]> {
+  return invoke<string[]>("pick_import_photos");
+}
+
+export function importPhotos(paths: string[]): Promise<Photo[]> {
+  return invoke<Photo[]>("import_photos", { paths });
+}
+
+export function detectScreenQuad(photoId: string): Promise<DetectResult> {
+  return invoke<DetectResult>("detect_screen_quad", { photoId });
+}
+
+export function warpPhoto(photoId: string, corners: Quad): Promise<Photo> {
+  return invoke<Photo>("warp_photo", { photoId, corners });
+}
+
+/** Fallback when `convertFileSrc` cannot load a project photo. */
+export function readPhotoBytes(relativePath: string): Promise<number[]> {
+  return invoke<number[]>("read_photo_bytes", { relativePath });
 }
