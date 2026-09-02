@@ -113,6 +113,19 @@ fn to_sequence_rejects_invalid_exclusive_unions() {
 }
 
 #[test]
+fn to_sequence_rejects_unsupported_project_version() {
+    let mut project = parse_project(PROJECT_V1).unwrap();
+    project.version = 2;
+    assert!(matches!(
+        to_sequence(&project),
+        Err(Error::UnsupportedVersion {
+            found: 2,
+            expected: 1
+        })
+    ));
+}
+
+#[test]
 fn exported_sequence_round_trips_through_parse_sequence() {
     let project = parse_project(PROJECT_V1).expect("parse project v1");
     let sequence = to_sequence(&project).expect("export");

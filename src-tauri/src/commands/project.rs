@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use picoflow_core::{parse_project, to_sequence, Project, Sequence, PROJECT_SCHEMA_VERSION};
+use picoflow_core::{
+    ensure_version, parse_project, to_sequence, Project, Sequence, PROJECT_SCHEMA_VERSION,
+    SEQUENCE_SCHEMA_VERSION,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::error::AppError;
 use crate::session::{canonicalize_dest, name_from_dir, Session};
@@ -46,6 +49,7 @@ pub fn init_project_dirs(dir: &Path) -> Result<(), AppError> {
 }
 
 pub fn write_project_json(dir: &Path, project: &Project) -> Result<(), AppError> {
+    ensure_version(project.version, PROJECT_SCHEMA_VERSION)?;
     project.validate_actions()?;
     write_json(&dir.join(PROJECT_JSON), project)
 }
@@ -70,46 +74,88 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Switch asset-protocol scope to `dest`, forbidding the previous project dir first.
+/// Grant asset-protocol reads under `dest`.
+///
+/// Do not `forbid_directory` the previous project: Tauri 2.11's forbid list is
+/// sticky, so Open A → Open B → Open A would break `convertFileSrc` for A.
 pub fn set_active_project(
     app: &AppHandle,
     session: &mut Session,
     dest: PathBuf,
 ) -> Result<(), AppError> {
-    let scope = app.asset_protocol_scope();
-    if let Some(prev) = session.project_dir.as_ref() {
-        if prev != &dest {
-            if let Err(err) = scope.forbid_directory(prev, true) {
-                tracing::warn!(
-                    path = %prev.display(),
-                    error = %err,
-                    "failed to forbid previous project dir"
-                );
-            }
-        }
-    }
-    scope
+    app.asset_protocol_scope()
         .allow_directory(&dest, true)
         .map_err(|err| AppError::io(format!("asset protocol allow_directory: {err}")))?;
     session.project_dir = Some(dest);
     Ok(())
 }
 
-fn record_and_require_dest(session: &mut Session, dest_dir: &str) -> Result<PathBuf, AppError> {
-    let dest = canonicalize_dest(Path::new(dest_dir))?;
+fn dest_from_dialog(picked: FilePath) -> Result<PathBuf, AppError> {
+    let dest = picked
+        .into_path()
+        .map_err(|err| AppError::path_not_allowed(err.to_string()))?;
+    canonicalize_dest(&dest)
+}
+
+fn record_native_dest(session: &mut Session, dest: PathBuf) -> Result<PathBuf, AppError> {
+    session.refuse_volume_dest(&dest)?;
     session.record_dialog_paths([dest.clone()]);
     session.require_dialog_dest(&dest)
 }
 
+fn default_picoflow_name(name: &str) -> String {
+    let stem = Path::new(name.trim())
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Untitled");
+    if stem.to_ascii_lowercase().ends_with(".picoflow") {
+        stem.to_string()
+    } else {
+        format!("{stem}.picoflow")
+    }
+}
+
+fn pick_save_picoflow(app: &AppHandle, default_name: &str) -> Result<PathBuf, AppError> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(default_picoflow_name(default_name))
+        .add_filter("PicoFlow", &["picoflow"])
+        .blocking_save_file()
+        .ok_or_else(|| AppError::canceled("save canceled"))?;
+    dest_from_dialog(picked)
+}
+
+fn pick_open_project_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    let picked = app
+        .dialog()
+        .file()
+        .blocking_pick_folder()
+        .ok_or_else(|| AppError::canceled("open canceled"))?;
+    dest_from_dialog(picked)
+}
+
+fn pick_save_sequence(app: &AppHandle) -> Result<PathBuf, AppError> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name("sequence.json")
+        .add_filter("JSON", &["json"])
+        .blocking_save_file()
+        .ok_or_else(|| AppError::canceled("export canceled"))?;
+    dest_from_dialog(picked)
+}
+
 #[tauri::command]
-pub fn create_project(
+pub async fn create_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
-    dest_dir: String,
     name: String,
 ) -> Result<Project, AppError> {
+    let dest = pick_save_picoflow(&app, &name)?;
     let mut session = lock_session(&session);
-    let dest = record_and_require_dest(&mut session, &dest_dir)?;
+    let dest = record_native_dest(&mut session, dest)?;
     let name = if name.trim().is_empty() {
         name_from_dir(&dest)
     } else {
@@ -123,13 +169,13 @@ pub fn create_project(
 }
 
 #[tauri::command]
-pub fn load_project(
+pub async fn load_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
-    project_dir: String,
 ) -> Result<Project, AppError> {
+    let dest = pick_open_project_dir(&app)?;
     let mut session = lock_session(&session);
-    let dest = record_and_require_dest(&mut session, &project_dir)?;
+    let dest = record_native_dest(&mut session, dest)?;
     let project = read_project_json(&dest)?;
     set_active_project(&app, &mut session, dest)?;
     Ok(project)
@@ -143,14 +189,19 @@ pub fn save_project(session: State<'_, Mutex<Session>>, project: Project) -> Res
 }
 
 #[tauri::command]
-pub fn duplicate_project(
+pub async fn duplicate_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
-    dest_dir: String,
 ) -> Result<Project, AppError> {
+    let (src, default_name) = {
+        let session = lock_session(&session);
+        let src = session.require_project_dir()?.to_path_buf();
+        let project = read_project_json(&src)?;
+        (src, format!("{}.picoflow", project.name))
+    };
+    let dest = pick_save_picoflow(&app, &default_name)?;
     let mut session = lock_session(&session);
-    let src = session.require_project_dir()?.to_path_buf();
-    let dest = record_and_require_dest(&mut session, &dest_dir)?;
+    let dest = record_native_dest(&mut session, dest)?;
     if dest == src {
         return Err(AppError::path_not_allowed(
             "duplicate dest must differ from the open project",
@@ -175,6 +226,7 @@ pub fn export_sequence(project: Project) -> Result<Sequence, AppError> {
 }
 
 pub fn write_sequence_to_dest(dest: &Path, sequence: &Sequence) -> Result<(), AppError> {
+    ensure_version(sequence.version, SEQUENCE_SCHEMA_VERSION)?;
     sequence.validate_events()?;
     write_json(dest, sequence)
 }
@@ -185,24 +237,12 @@ pub async fn write_sequence_file(
     session: State<'_, Mutex<Session>>,
     sequence: Sequence,
 ) -> Result<(), AppError> {
+    ensure_version(sequence.version, SEQUENCE_SCHEMA_VERSION)?;
     sequence.validate_events()?;
-    let picked = app
-        .dialog()
-        .file()
-        .set_file_name("sequence.json")
-        .add_filter("JSON", &["json"])
-        .blocking_save_file()
-        .ok_or_else(|| AppError::canceled("export canceled"))?;
-    let dest = picked
-        .into_path()
-        .map_err(|err| AppError::path_not_allowed(err.to_string()))?;
-    let dest = canonicalize_dest(&dest)?;
-
+    let dest = pick_save_sequence(&app)?;
     let mut session = lock_session(&session);
-    session.record_dialog_paths([dest.clone()]);
-    let dest = session.require_dialog_dest(&dest)?;
+    let dest = record_native_dest(&mut session, dest)?;
     drop(session);
-
     write_sequence_to_dest(&dest, &sequence)
 }
 
@@ -284,6 +324,22 @@ mod tests {
         assert!(!text.contains("\"atMs\""));
         let parsed = parse_sequence(&text).unwrap();
         assert_eq!(parsed.version, picoflow_core::SEQUENCE_SCHEMA_VERSION);
+        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
+    }
+
+    #[test]
+    fn write_rejects_unsupported_versions() {
+        let dest = temp_dir("version").join("Bad.picoflow");
+        init_project_dirs(&dest).unwrap();
+        let mut project = empty_project("Bad".into());
+        project.version = 2;
+        let err = write_project_json(&dest, &project).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidProject);
+
+        let mut sequence = to_sequence(&empty_project("ok".into())).unwrap();
+        sequence.version = 2;
+        let err = write_sequence_to_dest(&dest.join("sequence.json"), &sequence).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidProject);
         let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 

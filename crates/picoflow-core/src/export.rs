@@ -1,9 +1,10 @@
-use crate::project::{ActionKind, Project};
+use crate::project::{ActionKind, Project, PROJECT_SCHEMA_VERSION};
 use crate::sequence::{EventKind, Sequence, SequenceEvent, SEQUENCE_SCHEMA_VERSION};
-use crate::Error;
+use crate::{ensure_version, Error};
 
 /// Flatten a project into on-device `sequence.json` (snake_case, no clips/photos).
 pub fn to_sequence(project: &Project) -> Result<Sequence, Error> {
+    ensure_version(project.version, PROJECT_SCHEMA_VERSION)?;
     project.validate_actions()?;
 
     let mut events: Vec<SequenceEvent> = project

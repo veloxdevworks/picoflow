@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 
+const BLOCKED_VOLUME_LABELS: &[&str] = &["RPI-RP2", "CIRCUITPY"];
+
 /// Session-scoped path sandbox used by later commands.
 ///
 /// Commands must only touch `project_dir`, paths from the last native dialog,
@@ -10,13 +12,13 @@ use crate::error::AppError;
 pub struct Session {
     pub project_dir: Option<PathBuf>,
     pub last_dialog_paths: Vec<PathBuf>,
-    #[allow(dead_code)]
     pub last_volumes: Vec<LastVolume>,
 }
 
 /// Volume identity remembered from the last `list_pico_volumes` scan.
 #[derive(Debug, Clone)]
 pub struct LastVolume {
+    #[allow(dead_code)]
     pub id: String,
     pub path: PathBuf,
 }
@@ -49,6 +51,51 @@ impl Session {
             )))
         }
     }
+
+    /// No `asset:` scope for Pico MSC mounts (design: JS must not touch `/Volumes`).
+    pub fn refuse_volume_dest(&self, dest: &Path) -> Result<(), AppError> {
+        if is_blocked_volume_path(dest) {
+            return Err(AppError::path_not_allowed(format!(
+                "path {} is a Pico volume (RPI-RP2/CIRCUITPY are not asset-protocol dests)",
+                dest.display()
+            )));
+        }
+        for volume in &self.last_volumes {
+            if dest_is_under(dest, &volume.path) {
+                return Err(AppError::path_not_allowed(format!(
+                    "path {} is under the last volume scan ({})",
+                    dest.display(),
+                    volume.path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn is_blocked_volume_path(path: &Path) -> bool {
+    path.ancestors().any(|ancestor| {
+        ancestor
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_blocked_volume_label)
+    })
+}
+
+fn is_blocked_volume_label(name: &str) -> bool {
+    BLOCKED_VOLUME_LABELS
+        .iter()
+        .any(|label| name.eq_ignore_ascii_case(label))
+}
+
+fn dest_is_under(dest: &Path, root: &Path) -> bool {
+    let dest = canonicalize_dest(dest).unwrap_or_else(|_| dest.to_path_buf());
+    let root = if root.exists() {
+        std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+    } else {
+        root.to_path_buf()
+    };
+    dest == root || dest.starts_with(&root)
 }
 
 /// Reject relative paths so JS cannot walk out of a dialog dest with `../`.
@@ -122,5 +169,45 @@ mod tests {
             .require_dialog_dest(&std::env::temp_dir().join("other.picoflow"))
             .unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
+    }
+
+    #[test]
+    fn refuse_pico_volume_labels() {
+        let session = Session::default();
+        for dest in [
+            Path::new("/Volumes/RPI-RP2"),
+            Path::new("/Volumes/CIRCUITPY/sequence.json"),
+            Path::new("/media/user/circuitpy/foo.picoflow"),
+            Path::new("/run/media/user/rpi-rp2"),
+        ] {
+            let err = session.refuse_volume_dest(dest).unwrap_err();
+            assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
+        }
+        session
+            .refuse_volume_dest(&std::env::temp_dir().join("Demo.picoflow"))
+            .expect("temp dest is not a volume");
+    }
+
+    #[test]
+    fn refuse_last_volume_scan_paths() {
+        let volume = std::env::temp_dir().join(format!(
+            "picoflow-fake-vol-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&volume).unwrap();
+        let mut session = Session::default();
+        session.last_volumes.push(LastVolume {
+            id: volume.to_string_lossy().into_owned(),
+            path: volume.clone(),
+        });
+        let err = session
+            .refuse_volume_dest(&volume.join("sequence.json"))
+            .unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
+        let _ = std::fs::remove_dir_all(&volume);
     }
 }
