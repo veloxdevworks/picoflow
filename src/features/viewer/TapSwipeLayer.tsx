@@ -17,7 +17,12 @@ import {
   pointerToNormalized,
   type Rect,
 } from "../../lib/coords";
-import { actionOnClip, clipAt, totalDurationMs } from "../../lib/timeline";
+import {
+  actionOnClip,
+  clipAt,
+  totalDurationMs,
+  upcomingKeyframe,
+} from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import type { Action, Point } from "../../types/generated";
 
@@ -40,6 +45,7 @@ export function TapSwipeLayer({
 }) {
   const project = useEditor((s) => s.project);
   const playheadMs = useEditor((s) => s.playheadMs);
+  const playing = useEditor((s) => s.playing);
   const selection = useEditor((s) => s.selection);
   const updateProject = useEditor((s) => s.updateProject);
   const setSelection = useEditor((s) => s.setSelection);
@@ -75,6 +81,9 @@ export function TapSwipeLayer({
     ? project.actions.filter((action) => actionOnClip(action, clip))
     : [];
   const selectedId = selection?.type === "action" ? selection.id : null;
+  const upcomingId = project
+    ? upcomingKeyframe(project.actions, playheadMs)?.id ?? null
+    : null;
 
   const displayed = containRect(stageBox, imageWidth, imageHeight);
 
@@ -194,7 +203,7 @@ export function TapSwipeLayer({
             top: displayed.top,
             width: displayed.width,
             height: displayed.height,
-            pointerEvents: "auto",
+            pointerEvents: playing ? "none" : "auto",
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -213,6 +222,7 @@ export function TapSwipeLayer({
                 key={action.id}
                 action={action}
                 selected={action.id === selectedId}
+                upcoming={action.id === upcomingId}
               />
             ))}
             {gesture?.swiping ? (
@@ -231,6 +241,7 @@ export function TapSwipeLayer({
               key={action.id}
               action={action}
               selected={action.id === selectedId}
+              upcoming={action.id === upcomingId}
               onSelect={() => setSelection({ type: "action", id: action.id })}
             />
           ))}
@@ -249,9 +260,24 @@ export function TapSwipeLayer({
   );
 }
 
-function ActionOverlay({ action, selected }: { action: Action; selected: boolean }) {
-  const stroke = selected ? "stroke-sky-300" : "stroke-white/70";
-  const style = { vectorEffect: "non-scaling-stroke" as const, strokeWidth: selected ? 2 : 1.5 };
+function ActionOverlay({
+  action,
+  selected,
+  upcoming,
+}: {
+  action: Action;
+  selected: boolean;
+  upcoming: boolean;
+}) {
+  const stroke = selected
+    ? "stroke-sky-300"
+    : upcoming
+      ? "stroke-amber-300"
+      : "stroke-white/70";
+  const style = {
+    vectorEffect: "non-scaling-stroke" as const,
+    strokeWidth: selected || upcoming ? 2 : 1.5,
+  };
   if (action.type === "swipe") {
     return (
       <line
@@ -270,10 +296,12 @@ function ActionOverlay({ action, selected }: { action: Action; selected: boolean
 function ActionHandle({
   action,
   selected,
+  upcoming,
   onSelect,
 }: {
   action: Action;
   selected: boolean;
+  upcoming: boolean;
   onSelect: () => void;
 }) {
   const points = handlePoints(action);
@@ -290,7 +318,9 @@ function ActionHandle({
           className={`absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 touch-none ${
             selected
               ? "border-sky-300 bg-sky-400"
-              : "border-white/80 bg-zinc-950/80 hover:border-sky-200"
+              : upcoming
+                ? "border-amber-300 bg-amber-400"
+                : "border-white/80 bg-zinc-950/80 hover:border-sky-200"
           }`}
           style={{
             left: `${point.x * 100}%`,

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { totalDurationMs } from "../lib/timeline";
 import type { Quad } from "../types/commands";
 import type { Project } from "../types/generated";
 
@@ -23,6 +24,8 @@ type EditorState = {
   projectDir: string | null;
   selection: Selection;
   playheadMs: number;
+  /** Visual preview only; never sends HID. */
+  playing: boolean;
   dirty: boolean;
   normalize: NormalizeSession | null;
   /** Bumped after each warp so `convertFileSrc` URLs are not reused. */
@@ -32,6 +35,9 @@ type EditorState = {
   updateProject: (updater: (project: Project) => Project) => void;
   setSelection: (selection: Selection) => void;
   setPlayheadMs: (playheadMs: number) => void;
+  play: () => void;
+  pause: () => void;
+  stop: () => void;
   setNormalize: (normalize: NormalizeSession | null) => void;
   setNormalizeCorners: (corners: Quad) => void;
   bumpPhotoRev: (photoId: string) => void;
@@ -44,6 +50,7 @@ export const useEditor = create<EditorState>((set) => ({
   projectDir: null,
   selection: null,
   playheadMs: 0,
+  playing: false,
   dirty: false,
   normalize: null,
   photoRev: {},
@@ -54,6 +61,7 @@ export const useEditor = create<EditorState>((set) => ({
       dirty: false,
       selection: null,
       playheadMs: 0,
+      playing: false,
       normalize: null,
       photoRev: {},
     }),
@@ -83,6 +91,26 @@ export const useEditor = create<EditorState>((set) => ({
     }),
   setPlayheadMs: (playheadMs) =>
     set((state) => (state.playheadMs === playheadMs ? state : { playheadMs })),
+  play: () =>
+    set((state) => {
+      const total = state.project ? totalDurationMs(state.project.clips) : 0;
+      if (!(total > 0)) {
+        return state.playing ? { playing: false } : state;
+      }
+      const playheadMs = state.playheadMs >= total ? 0 : state.playheadMs;
+      if (state.playing && playheadMs === state.playheadMs) {
+        return state;
+      }
+      return { playing: true, playheadMs };
+    }),
+  pause: () => set((state) => (state.playing ? { playing: false } : state)),
+  stop: () =>
+    set((state) => {
+      if (!state.playing && state.playheadMs === 0) {
+        return state;
+      }
+      return { playing: false, playheadMs: 0 };
+    }),
   setNormalize: (normalize) => set({ normalize }),
   setNormalizeCorners: (corners) =>
     set((state) =>

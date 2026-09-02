@@ -7,7 +7,7 @@ import {
   Move,
   MoveHorizontal,
 } from "lucide-react";
-import { clampActionAtMs } from "../../lib/timeline";
+import { clampActionAtMs, upcomingKeyframe } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import type { Action } from "../../types/generated";
 
@@ -74,6 +74,8 @@ export function ActionTrack({
   const dragRef = useRef<Drag | null>(null);
   const [preview, setPreview] = useState<{ id: string; atMs: number } | null>(null);
   const updateProject = useEditor((s) => s.updateProject);
+  const playheadMs = useEditor((s) => s.playheadMs);
+  const upcomingId = upcomingKeyframe(actions, playheadMs)?.id ?? null;
 
   function clientXToAtMs(clientX: number): number {
     const el = trackRef.current;
@@ -144,18 +146,21 @@ export function ActionTrack({
     >
       {actions.map((action) => {
         const selected = selectedId === action.id;
+        const upcoming = upcomingId === action.id;
         const atMs = preview?.id === action.id ? preview.atMs : action.atMs;
         return (
           <button
             key={action.id}
             type="button"
-            title={`${actionLabel(action)} · ${atMs} ms`}
-            aria-label={`${actionLabel(action)} at ${atMs} ms`}
+            title={`${upcoming && !selected ? "Next · " : ""}${actionLabel(action)} · ${atMs} ms`}
+            aria-label={`${upcoming && !selected ? "Next " : ""}${actionLabel(action)} at ${atMs} ms`}
             aria-pressed={selected}
             className={`absolute top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-sm border touch-none ${
               selected
                 ? "border-sky-300 bg-sky-500 text-white"
-                : "border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-400"
+                : upcoming
+                  ? "border-amber-300 bg-amber-500 text-white"
+                  : "border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-400"
             }`}
             style={{ left: atMs * pxPerMs }}
             onPointerDown={(event) => {

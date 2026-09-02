@@ -4,6 +4,7 @@ import { Inspector } from "../features/inspector/Inspector";
 import { InstallWizard } from "../features/install/InstallWizard";
 import { NormalizeView } from "../features/normalize/NormalizeView";
 import { PhotoStrip } from "../features/photos/PhotoStrip";
+import { Transport } from "../features/preview/Transport";
 import { ProjectMenu } from "../features/project/ProjectMenu";
 import { Timeline } from "../features/timeline/Timeline";
 import { WarpedViewer } from "../features/viewer/WarpedViewer";
@@ -19,7 +20,7 @@ export function AuthoringShell() {
 
   return (
     <div className="grid h-full grid-cols-[13.5rem_minmax(0,1fr)_15rem] grid-rows-[auto_minmax(0,1fr)_12.5rem] bg-zinc-950 text-zinc-100">
-      <header className="col-span-3 flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-1.5">
+      <header className="relative col-span-3 flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex shrink-0 items-center gap-2 text-sm font-medium tracking-tight text-zinc-200">
             <Cpu className="h-4 w-4 text-zinc-400" aria-hidden />
@@ -34,6 +35,9 @@ export function AuthoringShell() {
             <Usb className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
             Install
           </button>
+        </div>
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <Transport />
         </div>
         <p className="min-w-0 max-w-[40%] truncate text-right text-xs text-zinc-400">
           {title}

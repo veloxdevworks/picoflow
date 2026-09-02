@@ -1,9 +1,27 @@
 import type { ReactNode } from "react";
 import { Monitor } from "lucide-react";
-import { clipAt } from "../../lib/timeline";
+import { clipAt, upcomingKeyframe } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
+import type { Action } from "../../types/generated";
 import { ProjectPhoto } from "../photos/ProjectPhoto";
 import { TapSwipeLayer } from "./TapSwipeLayer";
+
+function actionLabel(action: Action): string {
+  switch (action.type) {
+    case "tap":
+      return "Tap";
+    case "swipe":
+      return "Swipe";
+    case "key":
+      return action.keycode ? `Key ${action.keycode}` : "Key";
+    case "mouse_move":
+      return "Mouse move";
+    case "mouse_button":
+      return "Mouse button";
+    case "wait":
+      return "Wait";
+  }
+}
 
 export function WarpedViewer() {
   const project = useEditor((s) => s.project);
@@ -22,6 +40,7 @@ export function WarpedViewer() {
   }
 
   const clip = clipAt(project.clips, playheadMs);
+  const upcoming = upcomingKeyframe(project.actions, playheadMs);
   const photo = clip
     ? project.photos.find((item) => item.id === clip.photoId)
     : undefined;
@@ -52,8 +71,13 @@ export function WarpedViewer() {
         />
         <TapSwipeLayer imageWidth={imageWidth} imageHeight={imageHeight} />
       </div>
-      <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] text-zinc-500">
-        Click to tap · drag to swipe
+      <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] text-zinc-400">
+        {upcoming
+          ? `Next: ${actionLabel(upcoming)} · ${upcoming.atMs} ms`
+          : "No upcoming action"}
+        <span className="mt-0.5 block text-zinc-600">
+          Click to tap · drag to swipe · not live HID
+        </span>
       </p>
     </div>
   );
