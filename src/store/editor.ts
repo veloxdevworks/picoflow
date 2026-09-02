@@ -29,6 +29,7 @@ type EditorState = {
   photoRev: Record<string, number>;
   openProject: (project: Project, projectDir: string) => void;
   setProject: (project: Project) => void;
+  updateProject: (updater: (project: Project) => Project) => void;
   setSelection: (selection: Selection) => void;
   setPlayheadMs: (playheadMs: number) => void;
   setNormalize: (normalize: NormalizeSession | null) => void;
@@ -57,6 +58,13 @@ export const useEditor = create<EditorState>((set) => ({
       photoRev: {},
     }),
   setProject: (project) => set({ project, dirty: true }),
+  updateProject: (updater) =>
+    set((state) => {
+      if (!state.project) {
+        return state;
+      }
+      return { project: updater(state.project), dirty: true };
+    }),
   setSelection: (selection) =>
     set((state) => {
       const current = state.selection;

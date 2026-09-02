@@ -30,6 +30,22 @@ export function clampPlayheadMs(ms: number, totalMs: number): number {
   return Math.round(ms);
 }
 
+/** Actions live in `[0, total)`. `total` itself clamps onto the last millisecond. */
+export function clampActionAtMs(ms: number, totalMs: number): number {
+  if (!Number.isFinite(ms) || ms <= 0 || !(totalMs > 0)) {
+    return 0;
+  }
+  const last = Math.max(0, totalMs - 1);
+  if (ms >= last) {
+    return last;
+  }
+  return Math.round(ms);
+}
+
+export function actionOnClip(action: Action, clip: Clip): boolean {
+  return clip.startMs <= action.atMs && action.atMs < clip.startMs + clip.durationMs;
+}
+
 /** Half-open clip lookup. `ms >= total` returns the last clip. */
 export function clipAt(clips: readonly Clip[], ms: number): Clip | undefined {
   if (clips.length === 0) {

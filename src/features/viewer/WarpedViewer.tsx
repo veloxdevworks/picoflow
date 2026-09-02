@@ -3,6 +3,7 @@ import { Monitor } from "lucide-react";
 import { clipAt } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import { ProjectPhoto } from "../photos/ProjectPhoto";
+import { TapSwipeLayer } from "./TapSwipeLayer";
 
 export function WarpedViewer() {
   const project = useEditor((s) => s.project);
@@ -36,6 +37,9 @@ export function WarpedViewer() {
     );
   }
 
+  const imageWidth = photo.warpedWidth ?? photo.width;
+  const imageHeight = photo.warpedHeight ?? photo.height;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-zinc-950">
       <div className="relative min-h-0 flex-1">
@@ -46,7 +50,11 @@ export function WarpedViewer() {
           className="h-full w-full object-contain"
           cacheKey={String(photoRev[photo.id] ?? 0)}
         />
+        <TapSwipeLayer imageWidth={imageWidth} imageHeight={imageHeight} />
       </div>
+      <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] text-zinc-500">
+        Click to tap · drag to swipe
+      </p>
     </div>
   );
 }

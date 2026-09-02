@@ -8,6 +8,12 @@ export type Rect = {
 };
 
 export const DETECT_CONFIDENCE_THRESHOLD = 0.55;
+/** Pixel slop before a pointer-down becomes a swipe instead of a tap. */
+export const TAP_SLOP_PX = 8;
+
+export function isSwipeGesture(dx: number, dy: number, slopPx = TAP_SLOP_PX): boolean {
+  return dx * dx + dy * dy >= slopPx * slopPx;
+}
 
 export function clamp01(n: number): number {
   if (!Number.isFinite(n) || n <= 0) {

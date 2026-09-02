@@ -3,8 +3,10 @@ import {
   clamp01,
   containRect,
   insetRectangle,
+  isSwipeGesture,
   pointerToImagePx,
   pointerToNormalized,
+  TAP_SLOP_PX,
 } from "./coords";
 
 const rect = { left: 100, top: 50, width: 200, height: 100 };
@@ -18,6 +20,16 @@ describe("clamp01", () => {
     expect(clamp01(2)).toBe(1);
     expect(clamp01(Number.NaN)).toBe(0);
     expect(clamp01(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("isSwipeGesture", () => {
+  it("treats motion under the slop as a tap", () => {
+    expect(isSwipeGesture(0, 0)).toBe(false);
+    expect(isSwipeGesture(TAP_SLOP_PX - 1, 0)).toBe(false);
+    expect(isSwipeGesture(TAP_SLOP_PX, 0)).toBe(true);
+    expect(isSwipeGesture(3, 4)).toBe(false);
+    expect(isSwipeGesture(6, 6)).toBe(true);
   });
 });
 

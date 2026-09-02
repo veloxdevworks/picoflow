@@ -222,3 +222,11 @@ export function reorderClips(
 ): Promise<Project> {
   return invoke<Project>("reorder_clips", { project, orderedClipIds });
 }
+
+export function insertWait(
+  project: Project,
+  atMs: number,
+  durationMs: number,
+): Promise<Project> {
+  return invoke<Project>("insert_wait", { project, atMs, durationMs });
+}

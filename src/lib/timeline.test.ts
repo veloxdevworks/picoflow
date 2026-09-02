@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Action, Clip } from "../types/generated";
 import clipAtFixture from "../../crates/picoflow-core/tests/fixtures/timeline/clip_at.json";
 import {
+  actionOnClip,
+  clampActionAtMs,
   clampClipDurationMs,
   clampPlayheadMs,
   clipAt,
@@ -62,6 +64,36 @@ describe("clampPlayheadMs", () => {
     expect(clampPlayheadMs(4000, 4000)).toBe(4000);
     expect(clampPlayheadMs(9000, 4000)).toBe(4000);
     expect(clampPlayheadMs(100, 0)).toBe(0);
+  });
+});
+
+describe("clampActionAtMs", () => {
+  it("stays inside [0, total)", () => {
+    expect(clampActionAtMs(-10, 4000)).toBe(0);
+    expect(clampActionAtMs(0, 4000)).toBe(0);
+    expect(clampActionAtMs(1800, 4000)).toBe(1800);
+    expect(clampActionAtMs(4000, 4000)).toBe(3999);
+    expect(clampActionAtMs(9000, 4000)).toBe(3999);
+    expect(clampActionAtMs(100, 0)).toBe(0);
+    expect(clampActionAtMs(Number.NaN, 4000)).toBe(0);
+  });
+});
+
+describe("actionOnClip", () => {
+  const clip: Clip = { id: "c", photoId: "p", startMs: 4000, durationMs: 2000 };
+  it("uses a half-open interval", () => {
+    expect(actionOnClip({ id: "a", atMs: 3999, type: "wait", durationMs: 0 }, clip)).toBe(
+      false,
+    );
+    expect(actionOnClip({ id: "a", atMs: 4000, type: "wait", durationMs: 0 }, clip)).toBe(
+      true,
+    );
+    expect(actionOnClip({ id: "a", atMs: 5999, type: "wait", durationMs: 0 }, clip)).toBe(
+      true,
+    );
+    expect(actionOnClip({ id: "a", atMs: 6000, type: "wait", durationMs: 0 }, clip)).toBe(
+      false,
+    );
   });
 });
 

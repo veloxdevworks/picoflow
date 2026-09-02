@@ -610,6 +610,7 @@ export function Timeline() {
             <ActionTrack
               actions={actions}
               pxPerMs={pxPerMs}
+              totalMs={totalMs}
               selectedId={selectedActionId}
               onSelect={onSelectAction}
             />
