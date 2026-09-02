@@ -14,7 +14,7 @@ type EditorState = {
   selection: Selection;
   playheadMs: number;
   dirty: boolean;
-  openProject: (project: Project, projectDir?: string | null) => void;
+  openProject: (project: Project, projectDir: string) => void;
   setProject: (project: Project) => void;
   setSelection: (selection: Selection) => void;
   setPlayheadMs: (playheadMs: number) => void;
@@ -28,7 +28,7 @@ export const useEditor = create<EditorState>((set) => ({
   selection: null,
   playheadMs: 0,
   dirty: false,
-  openProject: (project, projectDir = null) =>
+  openProject: (project, projectDir) =>
     set({
       project,
       projectDir,

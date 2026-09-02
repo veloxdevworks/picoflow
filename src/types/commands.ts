@@ -61,21 +61,27 @@ export function errorMessage(err: unknown): string {
   return "Something went wrong";
 }
 
+/** Dialog dest flows out so `convertFileSrc` can run; JS never supplies dest. */
+export type OpenedProject = {
+  project: Project;
+  projectDir: string;
+};
+
 /** Native save dialog lives in Rust; pass a name hint or `""` for Untitled. */
-export function createProject(name: string): Promise<Project> {
-  return invoke<Project>("create_project", { name });
+export function createProject(name: string): Promise<OpenedProject> {
+  return invoke<OpenedProject>("create_project", { name });
 }
 
-export function loadProject(): Promise<Project> {
-  return invoke<Project>("load_project");
+export function loadProject(): Promise<OpenedProject> {
+  return invoke<OpenedProject>("load_project");
 }
 
 export function saveProject(project: Project): Promise<void> {
   return invoke("save_project", { project });
 }
 
-export function duplicateProject(): Promise<Project> {
-  return invoke<Project>("duplicate_project");
+export function duplicateProject(): Promise<OpenedProject> {
+  return invoke<OpenedProject>("duplicate_project");
 }
 
 export function exportSequence(project: Project): Promise<Sequence> {

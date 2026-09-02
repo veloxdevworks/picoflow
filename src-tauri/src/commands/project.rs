@@ -12,6 +12,14 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 use crate::error::AppError;
 use crate::session::{canonicalize_dest, name_from_dir, Session};
 
+/// Dialog dest flows *out* so JS can `convertFileSrc`; JS never supplies dest.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedProject {
+    pub project: Project,
+    pub project_dir: PathBuf,
+}
+
 const PROJECT_JSON: &str = "project.json";
 const PHOTOS_DIR: &str = "photos";
 const RAW_DIR: &str = "raw";
@@ -90,6 +98,13 @@ pub fn set_active_project(
     Ok(())
 }
 
+fn opened(project: Project, dest: PathBuf) -> OpenedProject {
+    OpenedProject {
+        project,
+        project_dir: dest,
+    }
+}
+
 fn dest_from_dialog(picked: FilePath) -> Result<PathBuf, AppError> {
     let dest = picked
         .into_path()
@@ -152,7 +167,7 @@ pub async fn create_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
     name: String,
-) -> Result<Project, AppError> {
+) -> Result<OpenedProject, AppError> {
     let dest = pick_save_picoflow(&app, &name)?;
     let mut session = lock_session(&session);
     let dest = record_native_dest(&mut session, dest)?;
@@ -164,21 +179,21 @@ pub async fn create_project(
     let project = empty_project(name);
     init_project_dirs(&dest)?;
     write_project_json(&dest, &project)?;
-    set_active_project(&app, &mut session, dest)?;
-    Ok(project)
+    set_active_project(&app, &mut session, dest.clone())?;
+    Ok(opened(project, dest))
 }
 
 #[tauri::command]
 pub async fn load_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
-) -> Result<Project, AppError> {
+) -> Result<OpenedProject, AppError> {
     let dest = pick_open_project_dir(&app)?;
     let mut session = lock_session(&session);
     let dest = record_native_dest(&mut session, dest)?;
     let project = read_project_json(&dest)?;
-    set_active_project(&app, &mut session, dest)?;
-    Ok(project)
+    set_active_project(&app, &mut session, dest.clone())?;
+    Ok(opened(project, dest))
 }
 
 #[tauri::command]
@@ -192,7 +207,7 @@ pub fn save_project(session: State<'_, Mutex<Session>>, project: Project) -> Res
 pub async fn duplicate_project(
     app: AppHandle,
     session: State<'_, Mutex<Session>>,
-) -> Result<Project, AppError> {
+) -> Result<OpenedProject, AppError> {
     let (src, default_name) = {
         let session = lock_session(&session);
         let src = session.require_project_dir()?.to_path_buf();
@@ -216,8 +231,8 @@ pub async fn duplicate_project(
         copy_dir_all(&photos, &dest.join(PHOTOS_DIR))?;
     }
     write_project_json(&dest, &project)?;
-    set_active_project(&app, &mut session, dest)?;
-    Ok(project)
+    set_active_project(&app, &mut session, dest.clone())?;
+    Ok(opened(project, dest))
 }
 
 #[tauri::command]

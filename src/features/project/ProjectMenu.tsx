@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import { useEditor } from "../../store/editor";
 import {
   createProject,
@@ -19,6 +21,29 @@ function confirmDiscard(dirty: boolean): boolean {
   return window.confirm("Discard unsaved changes?");
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function isApplePlatform(): boolean {
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const platform = nav.userAgentData?.platform ?? navigator.platform ?? "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+function shortcutMod(): string {
+  return isApplePlatform() ? "⌘" : "Ctrl+";
+}
+
 export function ProjectMenu() {
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -26,6 +51,7 @@ export function ProjectMenu() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mod = shortcutMod();
 
   const project = useEditor((s) => s.project);
   const openProject = useEditor((s) => s.openProject);
@@ -58,7 +84,7 @@ export function ProjectMenu() {
       }
       // Empty name: Rust save dialog defaults to Untitled.picoflow, then names from the folder.
       const created = await createProject("");
-      openProject(created);
+      openProject(created.project, created.projectDir);
     });
   }, [openProject, run]);
 
@@ -68,7 +94,7 @@ export function ProjectMenu() {
         return;
       }
       const loaded = await loadProject();
-      openProject(loaded);
+      openProject(loaded.project, loaded.projectDir);
     });
   }, [openProject, run]);
 
@@ -94,7 +120,7 @@ export function ProjectMenu() {
         markClean();
       }
       const copied = await duplicateProject();
-      openProject(copied);
+      openProject(copied.project, copied.projectDir);
     });
   }, [markClean, openProject, run]);
 
@@ -133,8 +159,11 @@ export function ProjectMenu() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod || event.altKey || event.shiftKey) {
+      if (event.repeat || isEditableTarget(event.target)) {
+        return;
+      }
+      const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier || event.altKey || event.shiftKey) {
         return;
       }
       const key = event.key.toLowerCase();
@@ -153,10 +182,45 @@ export function ProjectMenu() {
     return () => window.removeEventListener("keydown", onKey);
   }, [onNew, onOpen, onSave]);
 
+  useEffect(() => {
+    if (!isTauri()) {
+      function onBeforeUnload(event: BeforeUnloadEvent) {
+        if (!useEditor.getState().dirty) {
+          return;
+        }
+        event.preventDefault();
+        event.returnValue = "";
+      }
+      window.addEventListener("beforeunload", onBeforeUnload);
+      return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    }
+
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow()
+      .onCloseRequested((event) => {
+        if (useEditor.getState().dirty && !confirmDiscard(true)) {
+          event.preventDefault();
+        }
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   const hasProject = project !== null;
 
   return (
-    <div ref={rootRef} className="relative flex items-center gap-3">
+    <div ref={rootRef} className="relative flex min-w-0 items-center gap-3">
       <button
         type="button"
         aria-haspopup="menu"
@@ -175,11 +239,11 @@ export function ProjectMenu() {
           role="menu"
           className="absolute left-0 top-full z-20 mt-1 min-w-[13.5rem] rounded-md border border-zinc-800 bg-zinc-900 py-1 shadow-xl shadow-black/40"
         >
-          <MenuItem label="New" shortcut="⌘N" onClick={onNew} />
-          <MenuItem label="Open…" shortcut="⌘O" onClick={onOpen} />
+          <MenuItem label="New" shortcut={`${mod}N`} onClick={onNew} />
+          <MenuItem label="Open…" shortcut={`${mod}O`} onClick={onOpen} />
           <MenuItem
             label="Save"
-            shortcut="⌘S"
+            shortcut={`${mod}S`}
             disabled={!hasProject}
             onClick={onSave}
           />

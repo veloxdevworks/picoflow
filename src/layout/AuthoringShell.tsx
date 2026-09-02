@@ -35,15 +35,15 @@ export function AuthoringShell() {
 
   return (
     <div className="grid h-full grid-cols-[13.5rem_minmax(0,1fr)_15rem] grid-rows-[auto_minmax(0,1fr)_10.5rem] bg-zinc-950 text-zinc-100">
-      <header className="col-span-3 flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-2 text-sm font-medium tracking-tight text-zinc-200">
+      <header className="col-span-3 flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex shrink-0 items-center gap-2 text-sm font-medium tracking-tight text-zinc-200">
             <Cpu className="h-4 w-4 text-zinc-400" aria-hidden />
             PicoFlow
           </span>
           <ProjectMenu />
         </div>
-        <p className="truncate text-xs text-zinc-400">
+        <p className="min-w-0 max-w-[40%] truncate text-right text-xs text-zinc-400">
           {title}
           {dirty ? (
             <span className="ml-1.5 text-zinc-500" title="Unsaved changes">
