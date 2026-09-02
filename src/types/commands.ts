@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Photo, Point, Project, Sequence } from "./generated";
+import type { HidProfile, Photo, Point, Project, Sequence } from "./generated";
 
 /** IPC error payload from Rust `AppError`. */
 export type AppError = {
@@ -121,4 +121,79 @@ export function warpPhoto(photoId: string, corners: Quad): Promise<Photo> {
 /** Fallback when `convertFileSrc` cannot load a project photo. */
 export function readPhotoBytes(relativePath: string): Promise<number[]> {
   return invoke<number[]>("read_photo_bytes", { relativePath });
+}
+
+export type VolumeKind = "RpiRp2" | "Circuitpy";
+
+export type PicoflowIdentity = {
+  runtimeVersion: string;
+  hidProfile: HidProfile;
+};
+
+export type PicoVolume = {
+  id: string;
+  kind: VolumeKind;
+  label: string;
+  path: string;
+  writable: boolean;
+  picoflow: PicoflowIdentity | null;
+};
+
+export type FirmwareManifest = {
+  schemaVersion: number;
+  circuitpython: {
+    version: string;
+    board: string;
+    language: string;
+    uf2: string;
+    sha256: string;
+  };
+  runtime: {
+    version: string;
+    entry: { code: string; defaultSequence: string; identity: string };
+    lib: string[];
+  };
+  hidProfiles: Record<HidProfile, { boot: string }>;
+};
+
+export function getFirmwareManifest(): Promise<FirmwareManifest> {
+  return invoke<FirmwareManifest>("get_firmware_manifest");
+}
+
+export function listPicoVolumes(): Promise<PicoVolume[]> {
+  return invoke<PicoVolume[]>("list_pico_volumes");
+}
+
+export function flashUf2(volumeId: string): Promise<void> {
+  return invoke("flash_uf2", { volumeId });
+}
+
+export function waitForVolume(
+  kind: VolumeKind,
+  timeoutMs: number,
+): Promise<PicoVolume> {
+  return invoke<PicoVolume>("wait_for_volume", { kind, timeoutMs });
+}
+
+export function writeCircuitpy(
+  volumeId: string,
+  sequence: Sequence,
+): Promise<void> {
+  return invoke("write_circuitpy", { volumeId, sequence });
+}
+
+export function writeSequenceOnly(
+  volumeId: string,
+  sequence: Sequence,
+): Promise<void> {
+  return invoke("write_sequence_only", { volumeId, sequence });
+}
+
+export function ejectVolume(volumeId: string): Promise<void> {
+  return invoke("eject_volume", { volumeId });
+}
+
+/** Reveal the Tauri AppLog directory (Finder / `open` argv). */
+export function openAppLog(): Promise<void> {
+  return invoke("open_app_log");
 }

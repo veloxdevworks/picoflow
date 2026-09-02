@@ -23,6 +23,7 @@
     "allow-export-sequence",
     "allow-write-sequence-file",
     "allow-get-firmware-manifest",
+    "allow-open-app-log",
     "allow-flash-uf2",
     "allow-wait-for-volume",
     "allow-write-circuitpy",

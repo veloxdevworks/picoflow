@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import { Cpu, GanttChart, PanelRight } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Cpu, GanttChart, PanelRight, Usb } from "lucide-react";
+import { InstallWizard } from "../features/install/InstallWizard";
 import { NormalizeView } from "../features/normalize/NormalizeView";
 import { PhotoStrip } from "../features/photos/PhotoStrip";
 import { ProjectMenu } from "../features/project/ProjectMenu";
@@ -28,6 +29,7 @@ export function AuthoringShell() {
   const dirty = useEditor((s) => s.dirty);
   const selection = useEditor((s) => s.selection);
   const playheadMs = useEditor((s) => s.playheadMs);
+  const [installOpen, setInstallOpen] = useState(false);
 
   const title = project?.name ?? "No project";
   const inspectorHint = selection
@@ -42,7 +44,15 @@ export function AuthoringShell() {
             <Cpu className="h-4 w-4 text-zinc-400" aria-hidden />
             PicoFlow
           </span>
-          <ProjectMenu />
+          <ProjectMenu shortcutsEnabled={!installOpen} />
+          <button
+            type="button"
+            onClick={() => setInstallOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+          >
+            <Usb className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+            Install
+          </button>
         </div>
         <p className="min-w-0 max-w-[40%] truncate text-right text-xs text-zinc-400">
           {title}
@@ -81,6 +91,9 @@ export function AuthoringShell() {
           }
         />
       </section>
+      {installOpen ? (
+        <InstallWizard onClose={() => setInstallOpen(false)} />
+      ) : null}
     </div>
   );
 }
