@@ -59,7 +59,8 @@ export function ProjectMenu({
 
   const project = useEditor((s) => s.project);
   const openProject = useEditor((s) => s.openProject);
-  const markClean = useEditor((s) => s.markClean);
+  const commitSave = useEditor((s) => s.commitSave);
+  const markDirty = useEditor((s) => s.markDirty);
 
   const run = useCallback(async (op: () => Promise<void>) => {
     if (busyRef.current) {
@@ -86,11 +87,13 @@ export function ProjectMenu({
       if (!confirmDiscard(useEditor.getState().dirty)) {
         return;
       }
-      // Empty name: Rust save dialog defaults to Untitled.picoflow, then names from the folder.
       const created = await createProject("");
       openProject(created.project, created.projectDir);
+      if (created.untitled) {
+        markDirty();
+      }
     });
-  }, [openProject, run]);
+  }, [markDirty, openProject, run]);
 
   const onOpen = useCallback(() => {
     void run(async () => {
@@ -108,10 +111,10 @@ export function ProjectMenu({
       if (!current) {
         return;
       }
-      await saveProject(current);
-      markClean();
+      const saved = await saveProject(current);
+      commitSave(saved.project, saved.projectDir);
     });
-  }, [markClean, run]);
+  }, [commitSave, run]);
 
   const onDuplicate = useCallback(() => {
     void run(async () => {
@@ -120,13 +123,13 @@ export function ProjectMenu({
         return;
       }
       if (useEditor.getState().dirty) {
-        await saveProject(current);
-        markClean();
+        const saved = await saveProject(current);
+        commitSave(saved.project, saved.projectDir);
       }
       const copied = await duplicateProject();
       openProject(copied.project, copied.projectDir);
     });
-  }, [markClean, openProject, run]);
+  }, [commitSave, openProject, run]);
 
   const onExport = useCallback(() => {
     void run(async () => {

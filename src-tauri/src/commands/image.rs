@@ -3,8 +3,11 @@ use std::str::FromStr;
 use std::sync::Mutex;
 
 use picoflow_core::{Photo, PhotoId, Point};
-use picoflow_image::{decode_path, save_oriented, DetectResult};
-use tauri::{AppHandle, State};
+use picoflow_image::{
+    decode_path, is_heic_extension, looks_like_heic, save_oriented, DetectResult,
+};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::AppError;
@@ -37,8 +40,31 @@ pub async fn pick_import_photos(
     Ok(record_dialog_paths(&mut session, paths))
 }
 
+const IMPORT_PROGRESS_EVENT: &str = "photos:import-progress";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ImportPhase {
+    Converting,
+    Copied,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub current: usize,
+    pub total: usize,
+    pub filename: String,
+    pub phase: ImportPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photo: Option<Photo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn import_photos(
+    app: AppHandle,
     session: State<'_, Mutex<Session>>,
     paths: Vec<String>,
 ) -> Result<Vec<Photo>, AppError> {
@@ -50,9 +76,15 @@ pub async fn import_photos(
         (project_dir, paths)
     };
 
-    tauri::async_runtime::spawn_blocking(move || import_photos_inner(&project_dir, &paths))
-        .await
-        .map_err(|_| AppError::io("image worker failed"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        import_photos_inner(&project_dir, &paths, |progress| {
+            if let Err(err) = app.emit(IMPORT_PROGRESS_EVENT, progress) {
+                tracing::warn!("import progress emit failed: {err}");
+            }
+        })
+    })
+    .await
+    .map_err(|_| AppError::io("image worker failed"))?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -121,34 +153,108 @@ pub async fn read_photo_bytes(
         .map_err(|_| AppError::io("image worker failed"))?
 }
 
-fn import_photos_inner(project_dir: &Path, paths: &[PathBuf]) -> Result<Vec<Photo>, AppError> {
+fn import_photos_inner(
+    project_dir: &Path,
+    paths: &[PathBuf],
+    mut on_progress: impl FnMut(ImportProgress),
+) -> Result<Vec<Photo>, AppError> {
     let raw_dir = project_dir.join("photos/raw");
     std::fs::create_dir_all(&raw_dir)?;
     ensure_dir_under_project(project_dir, &raw_dir)?;
 
-    let mut photos = Vec::with_capacity(paths.len());
-    for src in paths {
-        let oriented = decode_path(src)?;
-        // Detect on the already-oriented pixels — do not decode a second time.
-        let detected = picoflow_image::detect_screen_quad(&oriented.pixels);
-        let id = PhotoId::new();
-        let rel = format!("photos/raw/{id}.{}", oriented.source_format.raw_extension());
-        let dest = project_dir.join(&rel);
-        save_oriented(&oriented, &dest)?;
-        photos.push(Photo {
-            id,
-            raw_path: rel,
-            warped_path: None,
-            corners: Some(core_points(detected.corners)),
-            detect_confidence: Some(detected.confidence),
-            normalized: false,
-            width: oriented.width(),
-            height: oriented.height(),
-            warped_width: None,
-            warped_height: None,
+    let total = paths.len();
+    let mut photos = Vec::with_capacity(total);
+    let mut failures = Vec::new();
+
+    for (index, src) in paths.iter().enumerate() {
+        let current = index + 1;
+        let filename = src
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| src.display().to_string());
+        let phase = import_phase(src);
+        on_progress(ImportProgress {
+            current,
+            total,
+            filename: filename.clone(),
+            phase,
+            photo: None,
+            error: None,
         });
+        match import_one_photo(project_dir, src) {
+            Ok(photo) => {
+                on_progress(ImportProgress {
+                    current,
+                    total,
+                    filename,
+                    phase: ImportPhase::Copied,
+                    photo: Some(photo.clone()),
+                    error: None,
+                });
+                photos.push(photo);
+            }
+            Err(err) => {
+                let message = err.message.clone();
+                failures.push(format!("{filename}: {message}"));
+                on_progress(ImportProgress {
+                    current,
+                    total,
+                    filename,
+                    phase,
+                    photo: None,
+                    error: Some(message),
+                });
+            }
+        }
+    }
+
+    if photos.is_empty() && !failures.is_empty() {
+        return Err(AppError::unsupported_image(failures.join("; ")));
     }
     Ok(photos)
+}
+
+fn import_one_photo(project_dir: &Path, src: &Path) -> Result<Photo, AppError> {
+    let oriented = decode_path(src)?;
+    // Detect on the already-oriented pixels — do not decode a second time.
+    let detected = picoflow_image::detect_screen_quad(&oriented.pixels);
+    let id = PhotoId::new();
+    let rel = format!("photos/raw/{id}.{}", oriented.source_format.raw_extension());
+    let dest = project_dir.join(&rel);
+    save_oriented(&oriented, &dest)?;
+    Ok(Photo {
+        id,
+        raw_path: rel,
+        warped_path: None,
+        corners: Some(core_points(detected.corners)),
+        detect_confidence: Some(detected.confidence),
+        normalized: false,
+        width: oriented.width(),
+        height: oriented.height(),
+        warped_width: None,
+        warped_height: None,
+    })
+}
+
+fn import_phase(path: &Path) -> ImportPhase {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if is_heic_extension(&ext) {
+        return ImportPhase::Converting;
+    }
+    if let Ok(mut file) = std::fs::File::open(path) {
+        use std::io::Read;
+        let mut buf = [0u8; 32];
+        if let Ok(n) = file.read(&mut buf) {
+            if looks_like_heic(&buf[..n]) {
+                return ImportPhase::Converting;
+            }
+        }
+    }
+    ImportPhase::Copied
 }
 
 fn warp_photo_inner(
@@ -360,11 +466,79 @@ mod tests {
         let mut session = Session {
             project_dir: Some(PathBuf::from("/tmp/proj")),
             last_dialog_paths: vec![],
-            last_volumes: vec![],
+            ..Session::default()
         };
         record_dialog_paths(&mut session, vec![PathBuf::from("/tmp/a.jpg")]);
         let err = ensure_import_paths(&session, &[PathBuf::from("/tmp/b.jpg")]).unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
         ensure_import_paths(&session, &[PathBuf::from("/tmp/a.jpg")]).expect("same path string");
+    }
+
+    #[test]
+    fn heic_paths_use_converting_phase() {
+        assert_eq!(
+            import_phase(Path::new("/tmp/shot.heic")),
+            ImportPhase::Converting
+        );
+        assert_eq!(
+            import_phase(Path::new("/tmp/shot.HEIF")),
+            ImportPhase::Converting
+        );
+        assert_eq!(
+            import_phase(Path::new("/tmp/shot.jpg")),
+            ImportPhase::Copied
+        );
+        assert_eq!(
+            import_phase(Path::new("/tmp/shot.png")),
+            ImportPhase::Copied
+        );
+    }
+
+    /// 1×1 red PNG.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE, 0xD4, 0xEF, 0x00, 0x00,
+        0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn import_temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "picoflow-import-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("photos/raw")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn import_continues_after_bad_file() {
+        let dest = import_temp_dir("partial");
+        let good = dest.join("good.png");
+        let bad = dest.join("bad.png");
+        std::fs::write(&good, TINY_PNG).unwrap();
+        std::fs::write(&bad, b"not an image").unwrap();
+
+        let mut events = Vec::new();
+        let photos = import_photos_inner(&dest, &[good, bad], |event| events.push(event)).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert!(events.iter().any(|event| event.error.is_some()));
+        assert!(events.iter().any(|event| event.photo.is_some()));
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn import_all_failures_return_error() {
+        let dest = import_temp_dir("all-fail");
+        let bad = dest.join("bad.png");
+        std::fs::write(&bad, b"not an image").unwrap();
+        let err = import_photos_inner(&dest, &[bad], |_| {}).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::UnsupportedImage);
+        let _ = std::fs::remove_dir_all(&dest);
     }
 }

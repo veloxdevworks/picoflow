@@ -11,6 +11,8 @@ const BLOCKED_VOLUME_LABELS: &[&str] = &["RPI-RP2", "CIRCUITPY"];
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     pub project_dir: Option<PathBuf>,
+    /// True while the open project lives under a `picoflow-untitled-*` temp dir.
+    pub untitled: bool,
     pub last_dialog_paths: Vec<PathBuf>,
     pub last_volumes: Vec<LastVolume>,
 }

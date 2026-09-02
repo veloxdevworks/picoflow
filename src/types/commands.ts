@@ -65,9 +65,10 @@ export function errorMessage(err: unknown): string {
 export type OpenedProject = {
   project: Project;
   projectDir: string;
+  untitled: boolean;
 };
 
-/** Native save dialog lives in Rust; pass a name hint or `""` for Untitled. */
+/** Starts a temp untitled project; Save picks the `.picoflow` dest. */
 export function createProject(name: string): Promise<OpenedProject> {
   return invoke<OpenedProject>("create_project", { name });
 }
@@ -76,8 +77,8 @@ export function loadProject(): Promise<OpenedProject> {
   return invoke<OpenedProject>("load_project");
 }
 
-export function saveProject(project: Project): Promise<void> {
-  return invoke("save_project", { project });
+export function saveProject(project: Project): Promise<OpenedProject> {
+  return invoke<OpenedProject>("save_project", { project });
 }
 
 export function duplicateProject(): Promise<OpenedProject> {
@@ -105,6 +106,19 @@ export type Quad = [Point, Point, Point, Point];
 export function pickImportPhotos(): Promise<string[]> {
   return invoke<string[]>("pick_import_photos");
 }
+
+export const IMPORT_PROGRESS_EVENT = "photos:import-progress";
+
+export type ImportPhase = "converting" | "copied";
+
+export type ImportProgress = {
+  current: number;
+  total: number;
+  filename: string;
+  phase: ImportPhase;
+  photo?: Photo;
+  error?: string;
+};
 
 export function importPhotos(paths: string[]): Promise<Photo[]> {
   return invoke<Photo[]>("import_photos", { paths });

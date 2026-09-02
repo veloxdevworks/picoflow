@@ -18,6 +18,7 @@ use crate::session::{canonicalize_dest, name_from_dir, Session};
 pub struct OpenedProject {
     pub project: Project,
     pub project_dir: PathBuf,
+    pub untitled: bool,
 }
 
 const PROJECT_JSON: &str = "project.json";
@@ -98,11 +99,104 @@ pub fn set_active_project(
     Ok(())
 }
 
-fn opened(project: Project, dest: PathBuf) -> OpenedProject {
+fn opened(project: Project, dest: PathBuf, untitled: bool) -> OpenedProject {
     OpenedProject {
         project,
         project_dir: dest,
+        untitled,
     }
+}
+
+const UNTITLED_PREFIX: &str = "picoflow-untitled-";
+
+pub fn untitled_dir_name(id: &str) -> String {
+    format!("{UNTITLED_PREFIX}{id}")
+}
+
+pub fn new_untitled_id() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{now}", std::process::id())
+}
+
+pub fn is_untitled_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(UNTITLED_PREFIX))
+}
+
+pub fn create_untitled_project(
+    parent: &Path,
+    id: &str,
+    name: String,
+) -> Result<(PathBuf, Project), AppError> {
+    let dest = parent.join(untitled_dir_name(id));
+    if dest.exists() {
+        std::fs::remove_dir_all(&dest)?;
+    }
+    let project = empty_project(if name.trim().is_empty() {
+        "Untitled".into()
+    } else {
+        name
+    });
+    init_project_dirs(&dest)?;
+    write_project_json(&dest, &project)?;
+    Ok((dest, project))
+}
+
+/// Move `src` to `dest`, copying across filesystems when rename is not possible.
+pub fn relocate_project_dir(src: &Path, dest: &Path) -> Result<(), AppError> {
+    if src == dest {
+        return Ok(());
+    }
+    if dest.exists() {
+        if dest.is_file() {
+            std::fs::remove_file(dest)?;
+        } else {
+            std::fs::remove_dir_all(dest)?;
+        }
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::rename(src, dest) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            copy_dir_all(src, dest)?;
+            std::fs::remove_dir_all(src)?;
+            Ok(())
+        }
+    }
+}
+
+pub fn save_untitled_as(src: &Path, dest: &Path, project: &mut Project) -> Result<(), AppError> {
+    write_project_json(src, project)?;
+    relocate_project_dir(src, dest)?;
+    project.name = name_from_dir(dest);
+    write_project_json(dest, project)?;
+    Ok(())
+}
+
+fn discard_untitled_dir(dir: &Path) {
+    if is_untitled_dir(dir) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+fn take_untitled_dir(session: &mut Session) -> Option<PathBuf> {
+    if !session.untitled {
+        return None;
+    }
+    session.untitled = false;
+    session.project_dir.take()
+}
+
+fn app_temp_dir(app: &AppHandle) -> PathBuf {
+    app.path()
+        .temp_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
 }
 
 fn dest_from_dialog(picked: FilePath) -> Result<PathBuf, AppError> {
@@ -168,19 +262,19 @@ pub async fn create_project(
     session: State<'_, Mutex<Session>>,
     name: String,
 ) -> Result<OpenedProject, AppError> {
-    let dest = pick_save_picoflow(&app, &name)?;
+    let parent = app_temp_dir(&app);
+    let (dest, project) = create_untitled_project(&parent, &new_untitled_id(), name)?;
     let mut session = lock_session(&session);
-    let dest = record_native_dest(&mut session, dest)?;
-    let name = if name.trim().is_empty() {
-        name_from_dir(&dest)
-    } else {
-        name
-    };
-    let project = empty_project(name);
-    init_project_dirs(&dest)?;
-    write_project_json(&dest, &project)?;
+    let previous = take_untitled_dir(&mut session);
     set_active_project(&app, &mut session, dest.clone())?;
-    Ok(opened(project, dest))
+    session.untitled = true;
+    drop(session);
+    if let Some(previous) = previous {
+        if previous != dest {
+            discard_untitled_dir(&previous);
+        }
+    }
+    Ok(opened(project, dest, true))
 }
 
 #[tauri::command]
@@ -192,15 +286,46 @@ pub async fn load_project(
     let mut session = lock_session(&session);
     let dest = record_native_dest(&mut session, dest)?;
     let project = read_project_json(&dest)?;
+    let previous = take_untitled_dir(&mut session);
     set_active_project(&app, &mut session, dest.clone())?;
-    Ok(opened(project, dest))
+    drop(session);
+    if let Some(previous) = previous {
+        if previous != dest {
+            discard_untitled_dir(&previous);
+        }
+    }
+    Ok(opened(project, dest, false))
 }
 
 #[tauri::command]
-pub fn save_project(session: State<'_, Mutex<Session>>, project: Project) -> Result<(), AppError> {
-    let session = lock_session(&session);
-    let dir = session.require_project_dir()?;
-    write_project_json(dir, &project)
+pub async fn save_project(
+    app: AppHandle,
+    session: State<'_, Mutex<Session>>,
+    mut project: Project,
+) -> Result<OpenedProject, AppError> {
+    let (untitled, dir) = {
+        let session = lock_session(&session);
+        let dir = session.require_project_dir()?.to_path_buf();
+        (session.untitled, dir)
+    };
+
+    if !untitled {
+        write_project_json(&dir, &project)?;
+        return Ok(opened(project, dir, false));
+    }
+
+    let dest = pick_save_picoflow(&app, &project.name)?;
+    let mut session = lock_session(&session);
+    let dest = record_native_dest(&mut session, dest)?;
+    if dest == dir {
+        write_project_json(&dir, &project)?;
+        session.untitled = false;
+        return Ok(opened(project, dir, false));
+    }
+    save_untitled_as(&dir, &dest, &mut project)?;
+    session.untitled = false;
+    set_active_project(&app, &mut session, dest.clone())?;
+    Ok(opened(project, dest, false))
 }
 
 #[tauri::command]
@@ -231,8 +356,15 @@ pub async fn duplicate_project(
         copy_dir_all(&photos, &dest.join(PHOTOS_DIR))?;
     }
     write_project_json(&dest, &project)?;
+    let previous = take_untitled_dir(&mut session);
     set_active_project(&app, &mut session, dest.clone())?;
-    Ok(opened(project, dest))
+    drop(session);
+    if let Some(previous) = previous {
+        if previous != dest {
+            discard_untitled_dir(&previous);
+        }
+    }
+    Ok(opened(project, dest, false))
 }
 
 #[tauri::command]
@@ -356,6 +488,44 @@ mod tests {
         let err = write_sequence_to_dest(&dest.join("sequence.json"), &sequence).unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::InvalidProject);
         let _ = std::fs::remove_dir_all(dest.parent().unwrap());
+    }
+
+    #[test]
+    fn untitled_dir_has_expected_layout() {
+        let parent = temp_dir("untitled-layout");
+        let (dest, project) = create_untitled_project(&parent, "abc", String::new()).unwrap();
+        assert_eq!(dest, parent.join("picoflow-untitled-abc"));
+        assert!(is_untitled_dir(&dest));
+        assert_eq!(project.name, "Untitled");
+        assert!(dest.join("project.json").is_file());
+        assert!(dest.join("photos/raw").is_dir());
+        assert!(dest.join("photos/warped").is_dir());
+        let loaded = read_project_json(&dest).unwrap();
+        assert_eq!(loaded.name, "Untitled");
+        assert_eq!(loaded.photos.len(), 0);
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn save_as_moves_untitled_and_renames() {
+        let parent = temp_dir("untitled-save-as");
+        let (src, mut project) = create_untitled_project(&parent, "move", String::new()).unwrap();
+        std::fs::write(src.join("photos/raw/note.txt"), b"raw").unwrap();
+        let dest = parent.join("Walkthrough.picoflow");
+
+        save_untitled_as(&src, &dest, &mut project).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(project.name, "Walkthrough");
+        assert!(dest.join("project.json").is_file());
+        assert_eq!(
+            std::fs::read(dest.join("photos/raw/note.txt")).unwrap(),
+            b"raw"
+        );
+        let loaded = read_project_json(&dest).unwrap();
+        assert_eq!(loaded.name, "Walkthrough");
+        assert!(!is_untitled_dir(&dest));
+        let _ = std::fs::remove_dir_all(&parent);
     }
 
     #[test]
