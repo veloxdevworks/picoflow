@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { PanelRight } from "lucide-react";
 import {
   actionAtPlayhead,
+  actionLabel,
   appendAction,
   charsAction,
   convertAction,
@@ -67,6 +68,7 @@ function photoLabel(photo: Photo | undefined, fallback: string): string {
 export function Inspector() {
   const project = useEditor((s) => s.project);
   const selection = useEditor((s) => s.selection);
+  const playing = useEditor((s) => s.playing);
   const setProject = useEditor((s) => s.setProject);
   const updateProject = useEditor((s) => s.updateProject);
   const setSelection = useEditor((s) => s.setSelection);
@@ -95,6 +97,9 @@ export function Inspector() {
 
   const commitAction = useCallback(
     (next: Action) => {
+      if (useEditor.getState().playing) {
+        return;
+      }
       updateProject((current) => replaceAction(current, next));
     },
     [updateProject],
@@ -103,7 +108,7 @@ export function Inspector() {
   const addAction = useCallback(
     (create: (atMs: number) => Action) => {
       const current = useEditor.getState().project;
-      if (!current || current.clips.length === 0) {
+      if (!current || current.clips.length === 0 || useEditor.getState().playing) {
         return;
       }
       const atMs = actionAtPlayhead(
@@ -120,7 +125,12 @@ export function Inspector() {
 
   const onInsertWait = useCallback(async () => {
     const snapshot = useEditor.getState().project;
-    if (!snapshot || snapshot.clips.length === 0 || busyRef.current) {
+    if (
+      !snapshot ||
+      snapshot.clips.length === 0 ||
+      busyRef.current ||
+      useEditor.getState().playing
+    ) {
       return;
     }
     const durationMs = parseMs(waitMs) ?? DEFAULT_WAIT_DURATION_MS;
@@ -152,7 +162,7 @@ export function Inspector() {
   }, [setProject, setSelection, waitMs]);
 
   const onDeleteAction = useCallback(() => {
-    if (!action) {
+    if (!action || useEditor.getState().playing) {
       return;
     }
     const id = action.id;
@@ -193,12 +203,17 @@ export function Inspector() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {action ? (
-          <ActionFields
-            action={action}
-            totalMs={totalDurationMs(project.clips)}
-            onChange={commitAction}
-            onDelete={onDeleteAction}
-          />
+          <fieldset
+            disabled={playing}
+            className="min-w-0 border-0 p-0 disabled:opacity-60"
+          >
+            <ActionFields
+              action={action}
+              totalMs={totalDurationMs(project.clips)}
+              onChange={commitAction}
+              onDelete={onDeleteAction}
+            />
+          </fieldset>
         ) : clip ? (
           <ClipFields clip={clip} photo={clipPhoto} />
         ) : photo ? (
@@ -215,27 +230,27 @@ export function Inspector() {
             </p>
             <div className="flex flex-wrap gap-1.5">
               <AddButton
-                disabled={busy}
+                disabled={busy || playing}
                 label="Key"
                 onClick={() => addAction((atMs) => keycodeAction(atMs))}
               />
               <AddButton
-                disabled={busy}
+                disabled={busy || playing}
                 label="Text"
                 onClick={() => addAction((atMs) => charsAction(atMs, "ok"))}
               />
               <AddButton
-                disabled={busy}
+                disabled={busy || playing}
                 label="Mouse move"
                 onClick={() => addAction((atMs) => mouseMoveAbsoluteAction(atMs, 0.5, 0.5))}
               />
               <AddButton
-                disabled={busy}
+                disabled={busy || playing}
                 label="Mouse rel"
                 onClick={() => addAction((atMs) => mouseMoveRelativeAction(atMs, 0, 0))}
               />
               <AddButton
-                disabled={busy}
+                disabled={busy || playing}
                 label="Click"
                 onClick={() => addAction((atMs) => mouseButtonAction(atMs))}
               />
@@ -247,7 +262,7 @@ export function Inspector() {
                   min={0}
                   step={50}
                   value={waitMs}
-                  disabled={busy}
+                  disabled={busy || playing}
                   aria-label="Wait duration in milliseconds"
                   className={INPUT_CLASS}
                   onChange={(event) => setWaitMs(event.target.value)}
@@ -255,7 +270,7 @@ export function Inspector() {
               </Field>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || playing}
                 onClick={() => void onInsertWait()}
                 className="mb-px shrink-0 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
               >
@@ -859,23 +874,6 @@ function AddButton({
       {label}
     </button>
   );
-}
-
-function actionLabel(action: Action): string {
-  switch (action.type) {
-    case "tap":
-      return "Tap";
-    case "swipe":
-      return "Swipe";
-    case "key":
-      return action.keycode ? `Key ${action.keycode}` : "Key";
-    case "mouse_move":
-      return "Mouse move";
-    case "mouse_button":
-      return "Mouse button";
-    case "wait":
-      return "Wait";
-  }
 }
 
 function Empty({

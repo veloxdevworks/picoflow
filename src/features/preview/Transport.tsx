@@ -1,32 +1,15 @@
 import { useEffect } from "react";
 import { Pause, Play, Square } from "lucide-react";
+import { actionLabel } from "../../lib/actions";
 import {
   clampPlayheadMs,
   totalDurationMs,
   upcomingKeyframe,
 } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
-import type { Action } from "../../types/generated";
 
 const BTN =
   "inline-flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50 disabled:opacity-40 disabled:hover:bg-transparent";
-
-function actionLabel(action: Action): string {
-  switch (action.type) {
-    case "tap":
-      return "Tap";
-    case "swipe":
-      return "Swipe";
-    case "key":
-      return action.keycode ? `Key ${action.keycode}` : "Key";
-    case "mouse_move":
-      return "Mouse move";
-    case "mouse_button":
-      return "Mouse button";
-    case "wait":
-      return "Wait";
-  }
-}
 
 export function Transport() {
   const project = useEditor((s) => s.project);
@@ -86,15 +69,15 @@ export function Transport() {
 
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex min-w-0 items-center gap-1.5"
       role="group"
       aria-label="Preview transport"
-      title="Preview is not live HID"
     >
       <button
         type="button"
         className={BTN}
         aria-label="Play"
+        title="Play"
         disabled={!canPlay || playing}
         onClick={() => play()}
       >
@@ -104,6 +87,7 @@ export function Transport() {
         type="button"
         className={BTN}
         aria-label="Pause"
+        title="Pause"
         disabled={!playing}
         onClick={() => pause()}
       >
@@ -113,6 +97,7 @@ export function Transport() {
         type="button"
         className={BTN}
         aria-label="Stop"
+        title="Stop"
         disabled={!canPlay || (!playing && playheadMs === 0)}
         onClick={() => stop()}
       >
@@ -128,7 +113,10 @@ export function Transport() {
             ? "Next: none"
             : "No clips"}
       </span>
-      <span className="text-[10px] uppercase tracking-wide text-zinc-600">
+      <span
+        className="text-[10px] uppercase tracking-wide text-zinc-600"
+        title="Preview is not live HID"
+      >
         Not live HID
       </span>
     </div>

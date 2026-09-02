@@ -257,3 +257,26 @@ export function convertAction(action: Action, type: ActionType): Action {
 export function actionAtPlayhead(playheadMs: number, totalMs: number): number {
   return clampActionAtMs(playheadMs, totalMs);
 }
+
+export function actionLabel(action: Action): string {
+  switch (action.type) {
+    case "tap":
+      return "Tap";
+    case "swipe":
+      return "Swipe";
+    case "key":
+      if (action.keycode) {
+        return `Key ${action.keycode}`;
+      }
+      if (action.chars) {
+        return `Key "${action.chars}"`;
+      }
+      return "Key";
+    case "mouse_move":
+      return "Mouse move";
+    case "mouse_button":
+      return "Mouse button";
+    case "wait":
+      return "Wait";
+  }
+}

@@ -1,4 +1,10 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   Clock,
   Keyboard,
@@ -7,6 +13,7 @@ import {
   Move,
   MoveHorizontal,
 } from "lucide-react";
+import { actionLabel } from "../../lib/actions";
 import { clampActionAtMs, upcomingKeyframe } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import type { Action } from "../../types/generated";
@@ -40,23 +47,6 @@ function actionIcon(action: Action): ReactNode {
   }
 }
 
-function actionLabel(action: Action): string {
-  switch (action.type) {
-    case "tap":
-      return "Tap";
-    case "swipe":
-      return "Swipe";
-    case "key":
-      return "Key";
-    case "mouse_move":
-      return "Mouse move";
-    case "mouse_button":
-      return "Mouse button";
-    case "wait":
-      return "Wait";
-  }
-}
-
 export function ActionTrack({
   actions,
   pxPerMs,
@@ -75,6 +65,7 @@ export function ActionTrack({
   const [preview, setPreview] = useState<{ id: string; atMs: number } | null>(null);
   const updateProject = useEditor((s) => s.updateProject);
   const playheadMs = useEditor((s) => s.playheadMs);
+  const playing = useEditor((s) => s.playing);
   const upcomingId = upcomingKeyframe(actions, playheadMs)?.id ?? null;
 
   function clientXToAtMs(clientX: number): number {
@@ -90,7 +81,12 @@ export function ActionTrack({
 
   function onMove(event: ReactPointerEvent<HTMLElement>, action: Action) {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || drag.actionId !== action.id) {
+    if (
+      !drag ||
+      drag.pointerId !== event.pointerId ||
+      drag.actionId !== action.id ||
+      useEditor.getState().playing
+    ) {
       return;
     }
     if (
@@ -113,12 +109,25 @@ export function ActionTrack({
     }
     dragRef.current = null;
     setPreview(null);
-    onSelect(drag.actionId, drag.originAtMs);
+    if (!useEditor.getState().playing) {
+      onSelect(drag.actionId, drag.originAtMs);
+    }
   }
+
+  useEffect(() => {
+    if (playing) {
+      abortDrag();
+    }
+  }, [playing]);
 
   function onUp(event: ReactPointerEvent<HTMLElement>, action: Action) {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || drag.actionId !== action.id) {
+    if (
+      !drag ||
+      drag.pointerId !== event.pointerId ||
+      drag.actionId !== action.id ||
+      useEditor.getState().playing
+    ) {
       return;
     }
     dragRef.current = null;
@@ -155,7 +164,9 @@ export function ActionTrack({
             title={`${upcoming && !selected ? "Next · " : ""}${actionLabel(action)} · ${atMs} ms`}
             aria-label={`${upcoming && !selected ? "Next " : ""}${actionLabel(action)} at ${atMs} ms`}
             aria-pressed={selected}
-            className={`absolute top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-sm border touch-none ${
+            className={`absolute top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border touch-none ${
+              playing ? "cursor-default" : "cursor-ew-resize"
+            } ${
               selected
                 ? "border-sky-300 bg-sky-500 text-white"
                 : upcoming
@@ -164,10 +175,10 @@ export function ActionTrack({
             }`}
             style={{ left: atMs * pxPerMs }}
             onPointerDown={(event) => {
-              event.stopPropagation();
-              if (event.button !== 0) {
+              if (playing || event.button !== 0) {
                 return;
               }
+              event.stopPropagation();
               event.preventDefault();
               event.currentTarget.setPointerCapture(event.pointerId);
               dragRef.current = {

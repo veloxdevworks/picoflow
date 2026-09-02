@@ -1,27 +1,10 @@
 import type { ReactNode } from "react";
 import { Monitor } from "lucide-react";
+import { actionLabel } from "../../lib/actions";
 import { clipAt, upcomingKeyframe } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
-import type { Action } from "../../types/generated";
 import { ProjectPhoto } from "../photos/ProjectPhoto";
 import { TapSwipeLayer } from "./TapSwipeLayer";
-
-function actionLabel(action: Action): string {
-  switch (action.type) {
-    case "tap":
-      return "Tap";
-    case "swipe":
-      return "Swipe";
-    case "key":
-      return action.keycode ? `Key ${action.keycode}` : "Key";
-    case "mouse_move":
-      return "Mouse move";
-    case "mouse_button":
-      return "Mouse button";
-    case "wait":
-      return "Wait";
-  }
-}
 
 export function WarpedViewer() {
   const project = useEditor((s) => s.project);

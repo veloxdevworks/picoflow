@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -98,7 +99,7 @@ export function TapSwipeLayer({
   const commit = useCallback(
     (draft: Gesture) => {
       const current = useEditor.getState().project;
-      if (!current || current.clips.length === 0) {
+      if (!current || current.clips.length === 0 || useEditor.getState().playing) {
         return;
       }
       const atMs = actionAtPlayhead(
@@ -116,7 +117,7 @@ export function TapSwipeLayer({
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) {
+      if (event.button !== 0 || useEditor.getState().playing) {
         return;
       }
       event.preventDefault();
@@ -188,6 +189,14 @@ export function TapSwipeLayer({
     setGesture(null);
   }, []);
 
+  useEffect(() => {
+    if (!playing || !gestureRef.current) {
+      return;
+    }
+    gestureRef.current = null;
+    setGesture(null);
+  }, [playing]);
+
   if (!(imageWidth > 0) || !(imageHeight > 0)) {
     return null;
   }
@@ -242,6 +251,7 @@ export function TapSwipeLayer({
               action={action}
               selected={action.id === selectedId}
               upcoming={action.id === upcomingId}
+              playing={playing}
               onSelect={() => setSelection({ type: "action", id: action.id })}
             />
           ))}
@@ -297,11 +307,13 @@ function ActionHandle({
   action,
   selected,
   upcoming,
+  playing,
   onSelect,
 }: {
   action: Action;
   selected: boolean;
   upcoming: boolean;
+  playing: boolean;
   onSelect: () => void;
 }) {
   const points = handlePoints(action);
@@ -314,6 +326,7 @@ function ActionHandle({
         <button
           key={`${action.id}:${index}`}
           type="button"
+          disabled={playing}
           aria-label={selected ? `Selected ${action.type}` : `Select ${action.type}`}
           className={`absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 touch-none ${
             selected
@@ -325,11 +338,14 @@ function ActionHandle({
           style={{
             left: `${point.x * 100}%`,
             top: `${point.y * 100}%`,
-            pointerEvents: "auto",
+            pointerEvents: playing ? "none" : "auto",
           }}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (playing) {
+              return;
+            }
             onSelect();
           }}
         />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  actionLabel,
   convertAction,
   keyWithChars,
   keyWithKeycode,
@@ -144,5 +145,13 @@ describe("convertAction", () => {
       x: 0.5,
       y: 0.5,
     });
+  });
+});
+
+describe("actionLabel", () => {
+  it("includes keycode or chars", () => {
+    expect(actionLabel(key({ keycode: "ENTER" }))).toBe("Key ENTER");
+    expect(actionLabel(keyWithChars(key(), "ok"))).toBe('Key "ok"');
+    expect(actionLabel(tapAction(0, 0.5, 0.5))).toBe("Tap");
   });
 });

@@ -163,6 +163,7 @@ export function Timeline() {
   const projectDir = useEditor((s) => s.projectDir);
   const selection = useEditor((s) => s.selection);
   const playheadMs = useEditor((s) => s.playheadMs);
+  const playing = useEditor((s) => s.playing);
   const photoRev = useEditor((s) => s.photoRev);
   const setProject = useEditor((s) => s.setProject);
   const setSelection = useEditor((s) => s.setSelection);
@@ -362,6 +363,9 @@ export function Timeline() {
       if (!drag || event.pointerId !== drag.pointerId) {
         return;
       }
+      if (drag.kind !== "scrub" && useEditor.getState().playing) {
+        return;
+      }
       if (drag.kind === "ripple") {
         const durationMs = maybeSnapRipple(
           drag,
@@ -408,6 +412,11 @@ export function Timeline() {
       }
       dragRef.current = null;
       stopListening();
+
+      if (drag.kind !== "scrub" && useEditor.getState().playing) {
+        clearPreview();
+        return;
+      }
 
       if (drag.kind === "scrub") {
         applyPlayhead(clientXToMs(event.clientX));
@@ -528,6 +537,19 @@ export function Timeline() {
     return () => viewport.removeEventListener("wheel", onWheel);
   }, [applyZoomFactor, clips.length]);
 
+  useEffect(() => {
+    if (!playing) {
+      return;
+    }
+    const drag = dragRef.current;
+    if (!drag || drag.kind === "scrub") {
+      return;
+    }
+    dragRef.current = null;
+    stopListening();
+    clearPreview();
+  }, [clearPreview, playing, stopListening]);
+
   const onScrubPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || busyRef.current || clipsRef.current.length === 0) {
@@ -544,7 +566,7 @@ export function Timeline() {
 
   const onClipPointerDown = useCallback(
     (clipId: string, event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0 || busyRef.current) {
+      if (event.button !== 0 || busyRef.current || useEditor.getState().playing) {
         return;
       }
       const fromIndex = clipsRef.current.findIndex((clip) => clip.id === clipId);
@@ -572,7 +594,7 @@ export function Timeline() {
 
   const onEdgePointerDown = useCallback(
     (clipId: string, event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0 || busyRef.current) {
+      if (event.button !== 0 || busyRef.current || useEditor.getState().playing) {
         return;
       }
       const clip = clipsRef.current.find((item) => item.id === clipId);
@@ -605,6 +627,9 @@ export function Timeline() {
       if (!(current?.type === "clip" && current.id === clipId)) {
         setSelection({ type: "clip", id: clipId });
       }
+      if (useEditor.getState().playing) {
+        return;
+      }
       const playhead = useEditor.getState().playheadMs;
       if (clipAt(clipsRef.current, playhead)?.id !== clipId) {
         setPlayheadMs(clip.startMs);
@@ -615,7 +640,7 @@ export function Timeline() {
 
   const onResizeKey = useCallback(
     (clipId: string, deltaMs: number) => {
-      if (busyRef.current) {
+      if (busyRef.current || useEditor.getState().playing) {
         return;
       }
       const clip = clipsRef.current.find((item) => item.id === clipId);
@@ -631,6 +656,9 @@ export function Timeline() {
 
   const onSelectAction = useCallback(
     (actionId: string, atMs: number) => {
+      if (useEditor.getState().playing) {
+        return;
+      }
       const current = useEditor.getState().selection;
       if (!(current?.type === "action" && current.id === actionId)) {
         setSelection({ type: "action", id: actionId });

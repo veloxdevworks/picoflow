@@ -103,7 +103,12 @@ export function PhotoStrip() {
               <li key={photo.id}>
                 <button
                   type="button"
-                  onClick={() => setSelection({ type: "photo", id: photo.id })}
+                  onClick={() => {
+                    if (useEditor.getState().playing) {
+                      useEditor.getState().pause();
+                    }
+                    setSelection({ type: "photo", id: photo.id });
+                  }}
                   className={`flex w-full flex-col overflow-hidden rounded-md border text-left transition ${
                     selected
                       ? "border-zinc-400 bg-zinc-800"

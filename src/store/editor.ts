@@ -98,10 +98,16 @@ export const useEditor = create<EditorState>((set) => ({
         return state.playing ? { playing: false } : state;
       }
       const playheadMs = state.playheadMs >= total ? 0 : state.playheadMs;
-      if (state.playing && playheadMs === state.playheadMs) {
+      const selection =
+        state.selection?.type === "photo" ? null : state.selection;
+      if (
+        state.playing &&
+        playheadMs === state.playheadMs &&
+        selection === state.selection
+      ) {
         return state;
       }
-      return { playing: true, playheadMs };
+      return { playing: true, playheadMs, selection };
     }),
   pause: () => set((state) => (state.playing ? { playing: false } : state)),
   stop: () =>
