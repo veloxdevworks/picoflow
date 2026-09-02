@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 /** `adafruit_hid.keycode.Keycode` names. Aliases included; firmware uses getattr. */
 export const KEYCODES = [
@@ -133,6 +133,18 @@ export const KEYCODES = [
   "RIGHT_GUI",
 ] as const;
 
+const KEYCODE_SET: ReadonlySet<string> = new Set(KEYCODES);
+
+/** Case-insensitive lookup; empty and unknown names are not committed. */
+export function canonicalKeycode(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const upper = trimmed.toUpperCase();
+  return KEYCODE_SET.has(upper) ? upper : null;
+}
+
 const INPUT_CLASS =
   "w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-zinc-500 disabled:opacity-50";
 
@@ -146,18 +158,52 @@ export function KeyPicker({
   disabled?: boolean;
 }) {
   const listId = useId();
+  const focusedRef = useRef(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(value);
+    }
+  }, [value]);
+
+  function commit(raw: string, revert: boolean) {
+    const code = canonicalKeycode(raw);
+    if (code) {
+      setDraft(code);
+      if (code !== value) {
+        onChange(code);
+      }
+      return;
+    }
+    if (revert) {
+      setDraft(value);
+    }
+  }
+
   return (
     <>
       <input
         list={listId}
-        value={value}
+        value={draft}
         disabled={disabled}
         spellCheck={false}
         autoComplete="off"
         aria-label="Keycode"
         placeholder="ENTER"
         className={INPUT_CLASS}
-        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => {
+          focusedRef.current = true;
+        }}
+        onChange={(event) => {
+          const raw = event.target.value;
+          setDraft(raw);
+          commit(raw, false);
+        }}
+        onBlur={(event) => {
+          focusedRef.current = false;
+          commit(event.target.value, true);
+        }}
       />
       <datalist id={listId}>
         {KEYCODES.map((name) => (

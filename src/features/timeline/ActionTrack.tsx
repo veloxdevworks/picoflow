@@ -104,6 +104,16 @@ export function ActionTrack({
     onSelect(action.id, atMs);
   }
 
+  function abortDrag() {
+    const drag = dragRef.current;
+    if (!drag) {
+      return;
+    }
+    dragRef.current = null;
+    setPreview(null);
+    onSelect(drag.actionId, drag.originAtMs);
+  }
+
   function onUp(event: ReactPointerEvent<HTMLElement>, action: Action) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId || drag.actionId !== action.id) {
@@ -168,13 +178,16 @@ export function ActionTrack({
             onPointerMove={(event) => onMove(event, action)}
             onPointerUp={(event) => onUp(event, action)}
             onPointerCancel={(event) => {
-              const drag = dragRef.current;
-              if (!drag || drag.pointerId !== event.pointerId) {
+              if (dragRef.current?.pointerId !== event.pointerId) {
                 return;
               }
-              dragRef.current = null;
-              setPreview(null);
-              onSelect(action.id, drag.originAtMs);
+              abortDrag();
+            }}
+            onLostPointerCapture={(event) => {
+              if (dragRef.current?.pointerId !== event.pointerId) {
+                return;
+              }
+              abortDrag();
             }}
           >
             {actionIcon(action)}

@@ -153,6 +153,8 @@ export function TapSwipeLayer({
       if (!draft || draft.pointerId !== event.pointerId) {
         return;
       }
+      gestureRef.current = null;
+      setGesture(null);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -163,16 +165,14 @@ export function TapSwipeLayer({
           event.clientX - draft.originClient.x,
           event.clientY - draft.originClient.y,
         );
-      gestureRef.current = null;
-      setGesture(null);
       commit({ ...draft, current, swiping });
     },
     [commit, pointFromEvent],
   );
 
-  const onPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  const abortGesture = useCallback((pointerId: number) => {
     const draft = gestureRef.current;
-    if (!draft || draft.pointerId !== event.pointerId) {
+    if (!draft || draft.pointerId !== pointerId) {
       return;
     }
     gestureRef.current = null;
@@ -199,7 +199,8 @@ export function TapSwipeLayer({
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
+          onPointerCancel={(event) => abortGesture(event.pointerId)}
+          onLostPointerCapture={(event) => abortGesture(event.pointerId)}
         >
           <svg
             className="pointer-events-none absolute inset-0 h-full w-full"

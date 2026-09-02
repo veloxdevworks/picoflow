@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { PanelRight } from "lucide-react";
 import {
   actionAtPlayhead,
@@ -22,6 +22,7 @@ import {
   type ActionType,
 } from "../../lib/actions";
 import { clamp01 } from "../../lib/coords";
+import { liveClamped, parseIntValue, parseMs, parseNumber } from "../../lib/parse";
 import { clampActionAtMs, totalDurationMs } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import { errorMessage, insertWait } from "../../types/commands";
@@ -61,21 +62,6 @@ function photoLabel(photo: Photo | undefined, fallback: string): string {
   const path = photo.warpedPath ?? photo.rawPath;
   const parts = path.split(/[/\\]/);
   return parts[parts.length - 1] || photo.id;
-}
-
-function parseNumber(raw: string): number | null {
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
-function parseMs(raw: string): number | null {
-  const n = parseNumber(raw);
-  return n === null ? null : Math.max(0, Math.round(n));
-}
-
-function parseIntValue(raw: string): number | null {
-  const n = parseNumber(raw);
-  return n === null ? null : Math.round(n);
 }
 
 export function Inspector() {
@@ -358,20 +344,14 @@ function ActionFields({
         </select>
       </Field>
       <Field label="atMs">
-        <input
-          type="number"
+        <NumberField
+          value={action.atMs}
           min={0}
           step={1}
-          className={INPUT_CLASS}
-          value={action.atMs}
-          aria-label="atMs"
-          onChange={(event) => {
-            const n = parseMs(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange({ ...action, atMs: clampActionAtMs(n, totalMs) });
-          }}
+          ariaLabel="atMs"
+          parse={parseMs}
+          clamp={(n) => clampActionAtMs(n, totalMs)}
+          onCommit={(atMs) => onChange({ ...action, atMs })}
         />
       </Field>
       {action.type === "tap" ? <TapFields action={action} onChange={onChange} /> : null}
@@ -416,19 +396,12 @@ function TapFields({
         onChange={(x, y) => onChange({ ...action, x, y })}
       />
       <Field label="holdMs">
-        <input
-          type="number"
-          min={0}
-          className={INPUT_CLASS}
+        <NumberField
           value={action.holdMs}
-          aria-label="holdMs"
-          onChange={(event) => {
-            const n = parseMs(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange({ ...action, holdMs: n });
-          }}
+          min={0}
+          ariaLabel="holdMs"
+          parse={parseMs}
+          onCommit={(holdMs) => onChange({ ...action, holdMs })}
         />
       </Field>
     </>
@@ -459,19 +432,13 @@ function SwipeFields({
         onChange={(x1, y1) => onChange({ ...action, x1, y1 })}
       />
       <Field label="durationMs">
-        <input
-          type="number"
-          min={MIN_SWIPE_DURATION_MS}
-          className={INPUT_CLASS}
+        <NumberField
           value={action.durationMs}
-          aria-label="durationMs"
-          onChange={(event) => {
-            const n = parseMs(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange({ ...action, durationMs: Math.max(MIN_SWIPE_DURATION_MS, n) });
-          }}
+          min={MIN_SWIPE_DURATION_MS}
+          ariaLabel="durationMs"
+          parse={parseMs}
+          clamp={(n) => Math.max(MIN_SWIPE_DURATION_MS, n)}
+          onCommit={(durationMs) => onChange({ ...action, durationMs })}
         />
       </Field>
     </>
@@ -507,27 +474,14 @@ function KeyFields({
         <Field label="keycode">
           <KeyPicker
             value={action.keycode ?? ""}
-            onChange={(keycode) => {
-              if (keycode.length === 0) {
-                return;
-              }
-              onChange(keyWithKeycode(action, keycode));
-            }}
+            onChange={(keycode) => onChange(keyWithKeycode(action, keycode))}
           />
         </Field>
       ) : (
         <Field label="chars">
-          <input
-            className={INPUT_CLASS}
+          <CharsInput
             value={action.chars ?? ""}
-            spellCheck={false}
-            aria-label="chars"
-            onChange={(event) => {
-              if (event.target.value.length === 0) {
-                return;
-              }
-              onChange(keyWithChars(action, event.target.value));
-            }}
+            onCommit={(chars) => onChange(keyWithChars(action, chars))}
           />
         </Field>
       )}
@@ -552,19 +506,12 @@ function KeyFields({
         </div>
       </Field>
       <Field label="holdMs">
-        <input
-          type="number"
-          min={0}
-          className={INPUT_CLASS}
+        <NumberField
           value={action.holdMs}
-          aria-label="holdMs"
-          onChange={(event) => {
-            const n = parseMs(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange(keyWithHoldMs(action, n));
-          }}
+          min={0}
+          ariaLabel="holdMs"
+          parse={parseMs}
+          onCommit={(holdMs) => onChange(keyWithHoldMs(action, holdMs))}
         />
       </Field>
     </>
@@ -610,35 +557,21 @@ function MouseMoveFields({
       ) : (
         <div className="grid grid-cols-2 gap-2">
           <Field label="dx">
-            <input
-              type="number"
-              step={1}
-              className={INPUT_CLASS}
+            <NumberField
               value={action.dx ?? 0}
-              aria-label="dx"
-              onChange={(event) => {
-                const n = parseIntValue(event.target.value);
-                if (n === null) {
-                  return;
-                }
-                onChange(mouseMoveRelative(action, n, action.dy ?? 0));
-              }}
+              step={1}
+              ariaLabel="dx"
+              parse={parseIntValue}
+              onCommit={(dx) => onChange(mouseMoveRelative(action, dx, action.dy ?? 0))}
             />
           </Field>
           <Field label="dy">
-            <input
-              type="number"
-              step={1}
-              className={INPUT_CLASS}
+            <NumberField
               value={action.dy ?? 0}
-              aria-label="dy"
-              onChange={(event) => {
-                const n = parseIntValue(event.target.value);
-                if (n === null) {
-                  return;
-                }
-                onChange(mouseMoveRelative(action, action.dx ?? 0, n));
-              }}
+              step={1}
+              ariaLabel="dy"
+              parse={parseIntValue}
+              onCommit={(dy) => onChange(mouseMoveRelative(action, action.dx ?? 0, dy))}
             />
           </Field>
         </div>
@@ -697,19 +630,12 @@ function WaitFields({
 }) {
   return (
     <Field label="durationMs">
-      <input
-        type="number"
-        min={0}
-        className={INPUT_CLASS}
+      <NumberField
         value={action.durationMs}
-        aria-label="durationMs"
-        onChange={(event) => {
-          const n = parseMs(event.target.value);
-          if (n === null) {
-            return;
-          }
-          onChange({ ...action, durationMs: n });
-        }}
+        min={0}
+        ariaLabel="durationMs"
+        parse={parseMs}
+        onCommit={(durationMs) => onChange({ ...action, durationMs })}
       />
     </Field>
   );
@@ -731,42 +657,151 @@ function CoordPair({
   return (
     <div className="grid grid-cols-2 gap-2">
       <Field label={xLabel}>
-        <input
-          type="number"
+        <NumberField
+          value={x}
           min={0}
           max={1}
           step={0.01}
-          className={INPUT_CLASS}
-          value={x}
-          aria-label={xLabel}
-          onChange={(event) => {
-            const n = parseNumber(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange(clamp01(n), y);
-          }}
+          ariaLabel={xLabel}
+          parse={parseNumber}
+          clamp={clamp01}
+          onCommit={(next) => onChange(next, y)}
         />
       </Field>
       <Field label={yLabel}>
-        <input
-          type="number"
+        <NumberField
+          value={y}
           min={0}
           max={1}
           step={0.01}
-          className={INPUT_CLASS}
-          value={y}
-          aria-label={yLabel}
-          onChange={(event) => {
-            const n = parseNumber(event.target.value);
-            if (n === null) {
-              return;
-            }
-            onChange(x, clamp01(n));
-          }}
+          ariaLabel={yLabel}
+          parse={parseNumber}
+          clamp={clamp01}
+          onCommit={(next) => onChange(x, next)}
         />
       </Field>
     </div>
+  );
+}
+
+function NumberField({
+  value,
+  onCommit,
+  parse,
+  clamp,
+  min,
+  max,
+  step,
+  ariaLabel,
+}: {
+  value: number;
+  onCommit: (n: number) => void;
+  parse: (raw: string) => number | null;
+  clamp?: (n: number) => number;
+  min?: number;
+  max?: number;
+  step?: number;
+  ariaLabel: string;
+}) {
+  const focusedRef = useRef(false);
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(String(value));
+    }
+  }, [value]);
+
+  function commit(raw: string, finalize: boolean) {
+    const n = parse(raw);
+    if (n === null) {
+      if (finalize) {
+        setDraft(String(value));
+      }
+      return;
+    }
+    const live = liveClamped(n, clamp);
+    if (!finalize && live === null) {
+      return;
+    }
+    const next = clamp ? clamp(n) : n;
+    if (next !== value) {
+      onCommit(next);
+    }
+    if (finalize) {
+      setDraft(String(next));
+    }
+  }
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      className={INPUT_CLASS}
+      value={draft}
+      aria-label={ariaLabel}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
+      onChange={(event) => {
+        const raw = event.target.value;
+        setDraft(raw);
+        commit(raw, false);
+      }}
+      onBlur={(event) => {
+        focusedRef.current = false;
+        commit(event.target.value, true);
+      }}
+    />
+  );
+}
+
+function CharsInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (chars: string) => void;
+}) {
+  const focusedRef = useRef(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(value);
+    }
+  }, [value]);
+
+  return (
+    <input
+      className={INPUT_CLASS}
+      value={draft}
+      spellCheck={false}
+      aria-label="chars"
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        if (next.length > 0 && next !== value) {
+          onCommit(next);
+        }
+      }}
+      onBlur={(event) => {
+        focusedRef.current = false;
+        const next = event.target.value;
+        if (next.length === 0) {
+          setDraft(value);
+          return;
+        }
+        if (next !== value) {
+          onCommit(next);
+        }
+      }}
+    />
   );
 }
 
