@@ -135,6 +135,7 @@ export function NormalizeView() {
       : undefined;
 
   const [busy, setBusy] = useState(false);
+  const [warping, setWarping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forceEditId, setForceEditId] = useState<string | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
@@ -219,6 +220,7 @@ export function NormalizeView() {
       return;
     }
     setBusy(true);
+    setWarping(true);
     setError(null);
     try {
       const dest = tabletSize(current.target);
@@ -255,6 +257,7 @@ export function NormalizeView() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      setWarping(false);
       setBusy(false);
     }
   }, [busy, bumpPhotoRev, setNormalize, setProject, setSelection]);
@@ -366,11 +369,13 @@ export function NormalizeView() {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/80 px-3 py-2">
         <p className="min-w-0 text-xs text-zinc-500">
-          {!session && busy
-            ? "Detecting screen corners…"
-            : lowConfidence
-              ? "Low confidence — drag the corners onto the screen."
-              : "Confirm the overlay, or drag a corner to adjust."}
+          {warping
+            ? "Warping…"
+            : !session && busy
+              ? "Detecting screen corners…"
+              : lowConfidence
+                ? "Low confidence — drag the corners onto the screen."
+                : "Confirm the overlay, or drag a corner to adjust."}
           {session ? (
             <span className="ml-2 text-zinc-600">
               {session.confidence.toFixed(2)}

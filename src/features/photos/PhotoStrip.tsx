@@ -1,11 +1,14 @@
 import { useCallback, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Image as ImageIcon, ImagePlus, Images } from "lucide-react";
 import { useEditor } from "../../store/editor";
 import {
   errorMessage,
+  IMPORT_PROGRESS_EVENT,
   importPhotos,
   isCanceled,
   pickImportPhotos,
+  type ImportProgress,
 } from "../../types/commands";
 import type { Photo } from "../../types/generated";
 import { ProjectPhoto } from "./ProjectPhoto";
@@ -14,6 +17,11 @@ function photoLabel(photo: Photo): string {
   const path = photo.warpedPath ?? photo.rawPath;
   const parts = path.split(/[/\\]/);
   return parts[parts.length - 1] || photo.id;
+}
+
+function progressLabel(progress: ImportProgress): string {
+  const verb = progress.phase === "converting" ? "Converting…" : "Importing…";
+  return `${verb} ${progress.current}/${progress.total} · ${progress.filename}`;
 }
 
 export function PhotoStrip() {
@@ -28,6 +36,7 @@ export function PhotoStrip() {
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
 
   const onImport = useCallback(() => {
     if (busyRef.current) {
@@ -40,24 +49,60 @@ export function PhotoStrip() {
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setProgress(null);
     void (async () => {
+      const failed: string[] = [];
+      let selectedFirst = false;
+      let unlisten: (() => void) | undefined;
       try {
         const paths = await pickImportPhotos();
+        unlisten = await listen<ImportProgress>(
+          IMPORT_PROGRESS_EVENT,
+          (event) => {
+            const payload = event.payload;
+            setProgress(payload);
+            if (payload.error) {
+              failed.push(payload.filename || payload.error);
+            }
+            const incoming = payload.photo;
+            if (!incoming) {
+              return;
+            }
+            const latest = useEditor.getState().project ?? current;
+            if (latest.photos.some((photo) => photo.id === incoming.id)) {
+              return;
+            }
+            setProject({ ...latest, photos: [...latest.photos, incoming] });
+            if (!selectedFirst) {
+              selectedFirst = true;
+              setNormalize(null);
+              setSelection({ type: "photo", id: incoming.id });
+            }
+          },
+        );
         const imported = await importPhotos(paths);
-        if (imported.length === 0) {
-          return;
-        }
         const latest = useEditor.getState().project ?? current;
-        setProject({ ...latest, photos: [...latest.photos, ...imported] });
-        setNormalize(null);
-        setSelection({ type: "photo", id: imported[0].id });
+        const have = new Set(latest.photos.map((photo) => photo.id));
+        const missing = imported.filter((photo) => !have.has(photo.id));
+        if (missing.length > 0) {
+          setProject({ ...latest, photos: [...latest.photos, ...missing] });
+          if (!selectedFirst) {
+            setNormalize(null);
+            setSelection({ type: "photo", id: missing[0].id });
+          }
+        }
+        if (failed.length > 0) {
+          setError(`Failed: ${failed.join(", ")}`);
+        }
       } catch (err) {
         if (!isCanceled(err)) {
           setError(errorMessage(err));
         }
       } finally {
+        unlisten?.();
         busyRef.current = false;
         setBusy(false);
+        setProgress(null);
       }
     })();
   }, [setNormalize, setProject, setSelection]);
@@ -78,12 +123,31 @@ export function PhotoStrip() {
           Import
         </button>
       </div>
+      {progress ? (
+        <div className="border-b border-zinc-800 px-2 py-1.5" aria-live="polite">
+          <p className="truncate text-[11px] text-zinc-400" title={progressLabel(progress)}>
+            {progressLabel(progress)}
+          </p>
+          <div className="mt-1 h-1 overflow-hidden rounded bg-zinc-800">
+            <div
+              className="h-full rounded bg-sky-600 transition-[width]"
+              style={{
+                width: `${
+                  progress.total > 0
+                    ? Math.min(100, (progress.current / progress.total) * 100)
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="truncate px-2 py-1 text-[11px] text-red-400" title={error}>
           {error}
         </p>
       ) : null}
-      {photos.length === 0 ? (
+      {photos.length === 0 && !progress ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
           <Images className="h-5 w-5 text-zinc-600" aria-hidden />
           <p className="text-xs font-medium text-zinc-500">No photos</p>

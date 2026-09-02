@@ -31,6 +31,8 @@ type EditorState = {
   /** Bumped after each warp so `convertFileSrc` URLs are not reused. */
   photoRev: Record<string, number>;
   openProject: (project: Project, projectDir: string) => void;
+  /** Apply a Save result without resetting selection or playhead. */
+  commitSave: (project: Project, projectDir: string) => void;
   setProject: (project: Project) => void;
   updateProject: (updater: (project: Project) => Project) => void;
   setSelection: (selection: Selection) => void;
@@ -64,6 +66,12 @@ export const useEditor = create<EditorState>((set) => ({
       playing: false,
       normalize: null,
       photoRev: {},
+    }),
+  commitSave: (project, projectDir) =>
+    set({
+      project,
+      projectDir,
+      dirty: false,
     }),
   setProject: (project) => set({ project, dirty: true }),
   updateProject: (updater) =>
