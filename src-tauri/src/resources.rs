@@ -58,12 +58,11 @@ pub struct HidProfileFiles {
 }
 
 impl HidProfiles {
-    #[allow(dead_code)]
-    pub fn boot_for(&self, profile: HidProfile) -> &str {
+    pub fn boot_for(&self, profile: HidProfile) -> Option<&str> {
         match profile {
-            HidProfile::AbsoluteMouseKeyboard => &self.absolute_mouse_keyboard.boot,
-            HidProfile::DigitizerKeyboard => &self.digitizer_keyboard.boot,
-            _ => &self.absolute_mouse_keyboard.boot,
+            HidProfile::AbsoluteMouseKeyboard => Some(&self.absolute_mouse_keyboard.boot),
+            HidProfile::DigitizerKeyboard => Some(&self.digitizer_keyboard.boot),
+            _ => None,
         }
     }
 }

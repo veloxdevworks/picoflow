@@ -4,8 +4,8 @@ use std::fs;
 
 use picoflow_flash::platform::{linux::LinuxVolumeSource, windows::WindowsVolumeSource};
 use picoflow_flash::{
-    list_pico_volumes, list_pico_volumes_with, DirVolumeSource, HidProfile, VolumeKind,
-    VolumeSource, LABEL_CIRCUITPY, LABEL_RPI_RP2,
+    list_pico_volumes, list_pico_volumes_with, wait_for_volume_with, DirVolumeSource, HidProfile,
+    VolumeKind, VolumeSource, LABEL_CIRCUITPY, LABEL_RPI_RP2,
 };
 use tempfile::tempdir;
 
@@ -133,6 +133,35 @@ fn windows_and_linux_stubs_return_empty() {
 #[test]
 fn platform_list_does_not_panic() {
     let _ = list_pico_volumes();
+}
+
+#[test]
+fn wait_returns_existing_volume_immediately() {
+    let root = tempdir().unwrap();
+    fs::create_dir(root.path().join(LABEL_CIRCUITPY)).unwrap();
+    let vol = wait_for_volume_with(
+        &DirVolumeSource::new(root.path()),
+        VolumeKind::Circuitpy,
+        std::time::Duration::from_millis(0),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(vol.kind, VolumeKind::Circuitpy);
+    assert_eq!(vol.label, LABEL_CIRCUITPY);
+}
+
+#[test]
+fn wait_times_out_when_kind_missing() {
+    let root = tempdir().unwrap();
+    fs::create_dir(root.path().join(LABEL_CIRCUITPY)).unwrap();
+    let err = wait_for_volume_with(
+        &DirVolumeSource::new(root.path()),
+        VolumeKind::RpiRp2,
+        std::time::Duration::from_millis(0),
+        |_| {},
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
 }
 
 #[cfg(unix)]

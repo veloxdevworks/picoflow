@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-flash-uf2"
+description = "Enables the flash_uf2 command without any pre-configured scope."
+commands.allow = ["flash_uf2"]
+
+[[permission]]
+identifier = "deny-flash-uf2"
+description = "Denies the flash_uf2 command without any pre-configured scope."
+commands.deny = ["flash_uf2"]

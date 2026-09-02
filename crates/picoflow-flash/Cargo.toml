@@ -8,6 +8,7 @@ description = "Pico volume detection and byte-copy flash for PicoFlow"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tracing = "0.1"
 
 [dev-dependencies]

@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,8 @@ use crate::platform;
 pub const LABEL_RPI_RP2: &str = "RPI-RP2";
 /// Volume label for CircuitPython MSC (case-sensitive).
 pub const LABEL_CIRCUITPY: &str = "CIRCUITPY";
+/// Wizard poll interval for BOOTSEL / post-UF2 CIRCUITPY waits.
+pub const VOLUME_POLL_INTERVAL: Duration = Duration::from_millis(400);
 
 /// Injected mount enumerator so tests do not need a real Pico.
 pub trait VolumeSource {
@@ -177,6 +179,40 @@ pub fn list_pico_volumes_with<S: VolumeSource>(source: &S) -> io::Result<Vec<Pic
     }
     publish_volume_scan(&out);
     Ok(out)
+}
+
+/// Poll [`list_pico_volumes`] until a volume of `kind` appears or `timeout` elapses.
+pub fn wait_for_volume(kind: VolumeKind, timeout: Duration) -> io::Result<PicoVolume> {
+    wait_for_volume_with(&platform::default_source(), kind, timeout, |_| {})
+}
+
+/// Injected-source wait used by tests and the Tauri command (scan callback records session).
+pub fn wait_for_volume_with<S, F>(
+    source: &S,
+    kind: VolumeKind,
+    timeout: Duration,
+    mut after_scan: F,
+) -> io::Result<PicoVolume>
+where
+    S: VolumeSource,
+    F: FnMut(&[PicoVolume]),
+{
+    let start = Instant::now();
+    loop {
+        let volumes = list_pico_volumes_with(source)?;
+        after_scan(&volumes);
+        if let Some(volume) = volumes.into_iter().find(|v| v.kind == kind) {
+            return Ok(volume);
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("timed out waiting for {kind:?} volume"),
+            ));
+        }
+        std::thread::sleep(VOLUME_POLL_INTERVAL.min(timeout.saturating_sub(elapsed)));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

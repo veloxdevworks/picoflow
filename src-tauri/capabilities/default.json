@@ -22,6 +22,11 @@
     "allow-duplicate-project",
     "allow-export-sequence",
     "allow-write-sequence-file",
-    "allow-get-firmware-manifest"
+    "allow-get-firmware-manifest",
+    "allow-flash-uf2",
+    "allow-wait-for-volume",
+    "allow-write-circuitpy",
+    "allow-write-sequence-only",
+    "allow-eject-volume"
   ]
 }

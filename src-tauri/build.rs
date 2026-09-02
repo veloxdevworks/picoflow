@@ -17,6 +17,11 @@ fn main() {
             "export_sequence",
             "write_sequence_file",
             "get_firmware_manifest",
+            "flash_uf2",
+            "wait_for_volume",
+            "write_circuitpy",
+            "write_sequence_only",
+            "eject_volume",
         ]),
     ))
     .expect("failed to run tauri-build");

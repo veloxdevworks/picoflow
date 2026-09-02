@@ -18,9 +18,10 @@ pub struct Session {
 /// Volume identity remembered from the last `list_pico_volumes` scan.
 #[derive(Debug, Clone)]
 pub struct LastVolume {
-    #[allow(dead_code)]
     pub id: String,
     pub path: PathBuf,
+    pub kind: picoflow_flash::VolumeKind,
+    pub writable: bool,
 }
 
 impl Session {
@@ -32,6 +33,18 @@ impl Session {
         self.project_dir
             .as_deref()
             .ok_or_else(|| AppError::path_not_allowed("no project directory in this session"))
+    }
+
+    /// Volume must have been returned by the last `list_pico_volumes` scan.
+    pub fn require_volume(&self, volume_id: &str) -> Result<&LastVolume, AppError> {
+        self.last_volumes
+            .iter()
+            .find(|v| v.id == volume_id)
+            .ok_or_else(|| {
+                AppError::path_not_allowed(format!(
+                    "volume {volume_id} is not from the last list_pico_volumes scan"
+                ))
+            })
     }
 
     /// Dest must equal a path from the last native dialog (after canonicalization).
@@ -203,11 +216,28 @@ mod tests {
         session.last_volumes.push(LastVolume {
             id: volume.to_string_lossy().into_owned(),
             path: volume.clone(),
+            kind: picoflow_flash::VolumeKind::Circuitpy,
+            writable: true,
         });
         let err = session
             .refuse_volume_dest(&volume.join("sequence.json"))
             .unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
         let _ = std::fs::remove_dir_all(&volume);
+    }
+
+    #[test]
+    fn require_volume_matches_last_scan_id() {
+        let mut session = Session::default();
+        session.last_volumes.push(LastVolume {
+            id: "/Volumes/RPI-RP2".into(),
+            path: PathBuf::from("/Volumes/RPI-RP2"),
+            kind: picoflow_flash::VolumeKind::RpiRp2,
+            writable: true,
+        });
+        let got = session.require_volume("/Volumes/RPI-RP2").unwrap();
+        assert_eq!(got.kind, picoflow_flash::VolumeKind::RpiRp2);
+        let err = session.require_volume("/Volumes/CIRCUITPY").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::PathNotAllowed);
     }
 }

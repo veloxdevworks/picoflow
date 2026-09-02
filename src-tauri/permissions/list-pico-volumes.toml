@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-list-pico-volumes"
-description = "Allow listing mounted RPI-RP2 and CIRCUITPY volumes"
-commands.allow = ["list_pico_volumes"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-pico-volumes"
+description = "Enables the list_pico_volumes command without any pre-configured scope."
+commands.allow = ["list_pico_volumes"]
+
+[[permission]]
+identifier = "deny-list-pico-volumes"
+description = "Denies the list_pico_volumes command without any pre-configured scope."
+commands.deny = ["list_pico_volumes"]
