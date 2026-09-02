@@ -4,13 +4,13 @@ use std::sync::Mutex;
 
 use picoflow_core::{Photo, PhotoId, Point};
 use picoflow_image::{
-    decode_path, is_heic_extension, looks_like_heic, save_oriented, DetectResult,
+    decode_path, is_heic_extension, looks_like_heic, rotate_oriented, save_oriented, DetectResult,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::error::AppError;
+use crate::error::{AppError, ErrorCode};
 use crate::session::Session;
 
 /// Native multi-file picker. Records the selection on the session so `import_photos`
@@ -136,6 +136,39 @@ pub async fn warp_photo(
     })
     .await
     .map_err(|_| AppError::io("image worker failed"))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rotate_photo(
+    session: State<'_, Mutex<Session>>,
+    photo_id: String,
+    degrees: i32,
+) -> Result<Photo, AppError> {
+    let project_dir = {
+        let session = lock_session(&session)?;
+        require_project_dir(&session)?
+    };
+    let id = parse_photo_id(&photo_id)?;
+    let raw = raw_photo_path(&project_dir, &id)?;
+
+    tauri::async_runtime::spawn_blocking(move || rotate_photo_inner(&project_dir, id, &raw, degrees))
+        .await
+        .map_err(|_| AppError::io("image worker failed"))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_photo(
+    session: State<'_, Mutex<Session>>,
+    photo_id: String,
+) -> Result<(), AppError> {
+    let project_dir = {
+        let session = lock_session(&session)?;
+        require_project_dir(&session)?
+    };
+    let id = parse_photo_id(&photo_id)?;
+    tauri::async_runtime::spawn_blocking(move || delete_photo_files(&project_dir, &id))
+        .await
+        .map_err(|_| AppError::io("image worker failed"))?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -323,6 +356,58 @@ fn core_points(corners: [picoflow_image::Point; 4]) -> [Point; 4] {
     ]
 }
 
+fn rotate_photo_inner(
+    project_dir: &Path,
+    id: PhotoId,
+    raw: &Path,
+    degrees: i32,
+) -> Result<Photo, AppError> {
+    let oriented = decode_path(raw)?;
+    let rotated = rotate_oriented(&oriented, degrees)?;
+    save_oriented(&rotated, raw)?;
+    remove_warped_if_present(project_dir, &id)?;
+    Ok(Photo {
+        id,
+        raw_path: raw_relative_path(raw, id),
+        warped_path: None,
+        corners: None,
+        detect_confidence: None,
+        normalized: false,
+        width: rotated.width(),
+        height: rotated.height(),
+        warped_width: None,
+        warped_height: None,
+    })
+}
+
+fn delete_photo_files(project_dir: &Path, photo_id: &PhotoId) -> Result<(), AppError> {
+    match raw_photo_path(project_dir, photo_id) {
+        Ok(raw) => remove_if_exists(&raw)?,
+        Err(err) if err.code == ErrorCode::NotFound => {}
+        Err(err) => return Err(err),
+    }
+    remove_warped_if_present(project_dir, photo_id)?;
+    Ok(())
+}
+
+fn remove_warped_if_present(project_dir: &Path, id: &PhotoId) -> Result<(), AppError> {
+    let rel = format!("photos/warped/{id}.png");
+    let candidate = project_dir.join(&rel);
+    if !candidate.exists() {
+        return Ok(());
+    }
+    let resolved = resolve_project_photo(project_dir, &rel)?;
+    remove_if_exists(&resolved)
+}
+
+fn remove_if_exists(path: &Path) -> Result<(), AppError> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn raw_relative_path(raw: &Path, id: PhotoId) -> String {
     let ext = raw.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
     format!("photos/raw/{id}.{ext}")
@@ -459,6 +544,68 @@ mod tests {
         assert!(!relative_is_safe("photos/raw/"));
         assert!(relative_is_safe("photos/raw/abc.jpg"));
         assert!(relative_is_safe("photos/warped/abc.png"));
+    }
+
+    fn temp_project(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "picoflow-image-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("photos/raw")).unwrap();
+        std::fs::create_dir_all(dir.join("photos/warped")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn delete_photo_files_removes_raw_and_warped_under_project() {
+        let dir = temp_project("delete-ok");
+        let id: PhotoId = "01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap();
+        let raw = dir.join(format!("photos/raw/{id}.jpg"));
+        let warped = dir.join(format!("photos/warped/{id}.png"));
+        std::fs::write(&raw, b"raw").unwrap();
+        std::fs::write(&warped, b"warp").unwrap();
+
+        delete_photo_files(&dir, &id).expect("delete under project");
+        assert!(!raw.exists());
+        assert!(!warped.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_photo_files_ok_when_warped_missing() {
+        let dir = temp_project("delete-nowarp");
+        let id: PhotoId = "01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap();
+        let raw = dir.join(format!("photos/raw/{id}.png"));
+        std::fs::write(&raw, b"raw").unwrap();
+
+        delete_photo_files(&dir, &id).expect("raw-only delete");
+        assert!(!raw.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_rejects_non_ulid_id() {
+        let err = parse_photo_id("../secret").unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = parse_photo_id("photos/raw/abc.jpg").unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn resolve_project_photo_refuses_escape_and_outside_files() {
+        let dir = temp_project("escape");
+        let outsider = dir.parent().unwrap().join("outside.jpg");
+        std::fs::write(&outsider, b"nope").unwrap();
+        let err = resolve_project_photo(&dir, "../outside.jpg").unwrap_err();
+        assert_eq!(err.code, ErrorCode::PathNotAllowed);
+        let err = resolve_project_photo(&dir, "photos/raw/../../outside.jpg").unwrap_err();
+        assert_eq!(err.code, ErrorCode::PathNotAllowed);
+        let _ = std::fs::remove_file(&outsider);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

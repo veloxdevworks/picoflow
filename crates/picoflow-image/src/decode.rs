@@ -3,6 +3,7 @@ use std::io::BufWriter;
 use std::path::Path;
 
 use image::codecs::jpeg::JpegEncoder;
+use image::imageops;
 use image::{load_from_memory, RgbImage};
 
 use crate::exif::{apply_orientation, read_orientation};
@@ -97,6 +98,24 @@ fn decode_bytes(bytes: &[u8], source_format: SourceFormat) -> Result<OrientedIma
     })
 }
 
+/// Rotate already-oriented pixels. `degrees` is 90 (CW), 180, or 270 (CCW).
+pub fn rotate_oriented(image: &OrientedImage, degrees: i32) -> Result<OrientedImage, Error> {
+    let pixels = match degrees.rem_euclid(360) {
+        90 => imageops::rotate90(&image.pixels),
+        180 => imageops::rotate180(&image.pixels),
+        270 => imageops::rotate270(&image.pixels),
+        _ => {
+            return Err(Error::unsupported_image(
+                "rotation must be 90, 180, or 270 degrees",
+            ))
+        }
+    };
+    Ok(OrientedImage {
+        pixels,
+        source_format: image.source_format,
+    })
+}
+
 /// Persist already-oriented pixels: JPEG q90, or PNG if the source was PNG.
 pub fn save_oriented(image: &OrientedImage, dest: &Path) -> Result<(), Error> {
     match image.source_format {
@@ -109,4 +128,27 @@ fn save_jpeg(pixels: &RgbImage, dest: &Path) -> Result<(), Error> {
     let file = fs::File::create(dest)?;
     let mut encoder = JpegEncoder::new_with_quality(BufWriter::new(file), JPEG_QUALITY);
     encoder.encode_image(pixels).map_err(map_image_err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Rgb;
+
+    #[test]
+    fn rotate_90_cw_swaps_dimensions() {
+        let mut pixels = RgbImage::new(3, 1);
+        pixels.put_pixel(0, 0, Rgb([1, 0, 0]));
+        pixels.put_pixel(2, 0, Rgb([0, 0, 1]));
+        let src = OrientedImage {
+            pixels,
+            source_format: SourceFormat::Png,
+        };
+        let rotated = rotate_oriented(&src, 90).expect("90 cw");
+        assert_eq!(rotated.width(), 1);
+        assert_eq!(rotated.height(), 3);
+        assert_eq!(rotated.pixels.get_pixel(0, 0).0, [1, 0, 0]);
+        assert_eq!(rotated.pixels.get_pixel(0, 2).0, [0, 0, 1]);
+        assert!(rotate_oriented(&src, 45).is_err());
+    }
 }

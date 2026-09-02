@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Image as ImageIcon, ImagePlus, Images } from "lucide-react";
+import { Image as ImageIcon, ImagePlus, Images, Trash2 } from "lucide-react";
 import { useEditor } from "../../store/editor";
 import {
   errorMessage,
@@ -12,6 +12,7 @@ import {
 } from "../../types/commands";
 import type { Photo } from "../../types/generated";
 import { ProjectPhoto } from "./ProjectPhoto";
+import { usePhotoActions, usePhotoDeleteShortcut } from "./usePhotoActions";
 
 function photoLabel(photo: Photo): string {
   const path = photo.warpedPath ?? photo.rawPath;
@@ -37,6 +38,9 @@ export function PhotoStrip() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const photoActions = usePhotoActions();
+  const photoSelected = selection?.type === "photo";
+  usePhotoDeleteShortcut(!!project && photoSelected, photoActions.onDelete);
 
   const onImport = useCallback(() => {
     if (busyRef.current) {
@@ -113,15 +117,26 @@ export function PhotoStrip() {
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
           Photos
         </span>
-        <button
-          type="button"
-          disabled={!project || busy}
-          onClick={onImport}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-600"
-        >
-          <ImagePlus className="h-3.5 w-3.5" aria-hidden />
-          Import
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            disabled={!project || busy}
+            onClick={onImport}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-600"
+          >
+            <ImagePlus className="h-3.5 w-3.5" aria-hidden />
+            Import
+          </button>
+          <button
+            type="button"
+            disabled={!project || busy || photoActions.busy || !photoSelected}
+            onClick={photoActions.onDelete}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-red-300 disabled:cursor-not-allowed disabled:text-zinc-600"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            Delete
+          </button>
+        </div>
       </div>
       {progress ? (
         <div className="border-b border-zinc-800 px-2 py-1.5" aria-live="polite">
@@ -142,14 +157,17 @@ export function PhotoStrip() {
           </div>
         </div>
       ) : null}
-      {error ? (
-        <p className="truncate px-2 py-1 text-[11px] text-red-400" title={error}>
-          {error}
+      {error || photoActions.error ? (
+        <p
+          className="truncate px-2 py-1 text-[11px] text-red-400"
+          title={error ?? photoActions.error ?? undefined}
+        >
+          {error ?? photoActions.error}
         </p>
       ) : null}
       {photos.length === 0 && !progress ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
-          <Images className="h-5 w-5 text-zinc-600" aria-hidden />
+        <div className="flex min-h-0 flex-1 select-none flex-col items-center justify-center gap-2 px-3 text-center">
+          <Images className="h-10 w-10 text-zinc-600" aria-hidden />
           <p className="text-xs font-medium text-zinc-500">No photos</p>
           <p className="text-[11px] leading-snug text-zinc-600">
             {project

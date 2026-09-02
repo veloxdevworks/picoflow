@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { isApplePlatform, isEditableTarget } from "../../lib/keys";
 import { useEditor } from "../../store/editor";
 import {
   createProject,
@@ -19,25 +21,6 @@ function confirmDiscard(dirty: boolean): boolean {
     return true;
   }
   return window.confirm("Discard unsaved changes?");
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
-function isApplePlatform(): boolean {
-  const nav = navigator as Navigator & {
-    userAgentData?: { platform?: string };
-  };
-  const platform = nav.userAgentData?.platform ?? navigator.platform ?? "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
 function shortcutMod(): string {
@@ -165,8 +148,52 @@ export function ProjectMenu({
   }, [open]);
 
   useEffect(() => {
+    if (!isTauri() || !shortcutsEnabled) {
+      return;
+    }
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void listen<string>("picoflow-menu", (event) => {
+      switch (event.payload) {
+        case "new":
+          onNew();
+          break;
+        case "open":
+          onOpen();
+          break;
+        case "save":
+          onSave();
+          break;
+        case "duplicate":
+          onDuplicate();
+          break;
+        case "export":
+          onExport();
+          break;
+        default:
+          break;
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [onDuplicate, onExport, onNew, onOpen, onSave, shortcutsEnabled]);
+
+  useEffect(() => {
     if (!shortcutsEnabled) {
       setOpen(false);
+      return;
+    }
+    // Native macOS File items already have Cmd accelerators; a second JS
+    // handler would double-fire New/Open/Save.
+    if (isTauri() && isApplePlatform()) {
       return;
     }
     function onKey(event: KeyboardEvent) {
@@ -229,9 +256,11 @@ export function ProjectMenu({
   }, []);
 
   const hasProject = project !== null;
+  const nativeMacFileMenu = isTauri() && isApplePlatform();
 
   return (
     <div ref={rootRef} className="relative flex min-w-0 items-center gap-3">
+      {nativeMacFileMenu ? null : (
       <button
         type="button"
         aria-haspopup="menu"
@@ -244,7 +273,8 @@ export function ProjectMenu({
         File
         <ChevronDown className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
       </button>
-      {open ? (
+      )}
+      {open && !nativeMacFileMenu ? (
         <div
           id={menuId}
           role="menu"

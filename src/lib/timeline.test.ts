@@ -11,6 +11,7 @@ import {
   MAX_ZOOM,
   MIN_CLIP_DURATION_MS,
   MIN_ZOOM,
+  packClips,
   rippleSnapTargetsMs,
   snapDurationMs,
   snapMs,
@@ -52,6 +53,20 @@ describe("totalDurationMs", () => {
         { id: "b", photoId: "q", startMs: 4000, durationMs: 2000 },
       ]),
     ).toBe(6000);
+  });
+});
+
+describe("packClips", () => {
+  it("rewrites startMs so clips are contiguous from 0", () => {
+    expect(
+      packClips([
+        { id: "b", photoId: "q", startMs: 4000, durationMs: 2000 },
+        { id: "a", photoId: "p", startMs: 0, durationMs: 4000 },
+      ]),
+    ).toEqual([
+      { id: "b", photoId: "q", startMs: 0, durationMs: 2000 },
+      { id: "a", photoId: "p", startMs: 2000, durationMs: 4000 },
+    ]);
   });
 });
 

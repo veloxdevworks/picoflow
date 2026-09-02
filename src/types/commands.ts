@@ -137,6 +137,19 @@ export function warpPhoto(
   return invoke<Photo>("warp_photo", { photoId, corners, destWidth, destHeight });
 }
 
+export type RotateDegrees = 90 | 180 | 270;
+
+export function rotatePhoto(
+  photoId: string,
+  degrees: RotateDegrees,
+): Promise<Photo> {
+  return invoke<Photo>("rotate_photo", { photoId, degrees });
+}
+
+export function deletePhoto(photoId: string): Promise<void> {
+  return invoke("delete_photo", { photoId });
+}
+
 /** Fallback when `convertFileSrc` cannot load a project photo. */
 export function readPhotoBytes(relativePath: string): Promise<number[]> {
   return invoke<number[]>("read_photo_bytes", { relativePath });
