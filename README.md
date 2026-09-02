@@ -30,6 +30,14 @@ Do **not** drag the UF2 in Finder on macOS Ventura+. Finder writes extended attr
 
 After the UF2, the board remounts as `CIRCUITPY`. Sequence files are written the same way (byte copy, no Finder, no `._*` AppleDouble files). Then unplug and plug the Pico into the target tablet.
 
-## Linux (P1)
+## Linux
 
-Volume detection and flash on Linux are P1. When they land, udev rules may be needed if the MSC device node is root-only. Do not `chmod 777` the device.
+Volume detection looks at `/media/$USER/<label>` and `/run/media/$USER/<label>`, then `/proc/mounts`. Labels must be exactly `RPI-RP2` or `CIRCUITPY`.
+
+If the MSC device node is root-only, add a udev `uaccess` rule so the seated user can mount it. Do **not** `chmod 777` the device. Notes: `docs/windows-linux.md`.
+
+## Windows
+
+Volume detection uses `GetLogicalDrives` + `GetVolumeInformationW` for labels `RPI-RP2` / `CIRCUITPY` (drive-letter roots such as `E:\`). Notes: `docs/windows-linux.md`.
+
+v1 acceptance checklist: `docs/acceptance.md`.

@@ -6,16 +6,31 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { GanttChart } from "lucide-react";
+import {
+  GanttChart,
+  Magnet,
+  UnfoldHorizontal,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import {
   clampClipDurationMs,
   clampPlayheadMs,
+  clampZoom,
   clipAt,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  SNAP_THRESHOLD_PX,
+  snapDurationMs,
+  snapMs,
+  snapTargetsMs,
+  tickStepMs,
   totalDurationMs,
+  ZOOM_STEP,
 } from "../../lib/timeline";
 import { useEditor } from "../../store/editor";
 import { errorMessage, reorderClips, rippleClip } from "../../types/commands";
-import type { Clip } from "../../types/generated";
+import type { Action, Clip } from "../../types/generated";
 import { ActionTrack } from "./ActionTrack";
 import { ClipTrack, type RubberBand } from "./ClipTrack";
 import { Playhead } from "./Playhead";
@@ -93,28 +108,53 @@ function reorderIdsAt(drag: ReorderDrag, ms: number): string[] {
   return moveId(drag.originIds, drag.fromIndex, indexAtMs(drag.originClips, ms));
 }
 
-function tickStepMs(totalMs: number): number {
-  if (totalMs <= 4000) {
-    return 1000;
-  }
-  if (totalMs <= 12000) {
-    return 2000;
-  }
-  if (totalMs <= 30000) {
-    return 5000;
-  }
-  if (totalMs <= 60000) {
-    return 10000;
-  }
-  return 15000;
-}
-
 function formatTick(ms: number): string {
   const s = ms / 1000;
   if (s >= 10 && s % 1 === 0) {
     return `${s.toFixed(0)}s`;
   }
   return `${s.toFixed(1)}s`;
+}
+
+function maybeSnapMs(
+  ms: number,
+  enabled: boolean,
+  pxPerMs: number,
+  clips: readonly Clip[],
+  actions: readonly Action[],
+): number {
+  if (!enabled || !(pxPerMs > 0)) {
+    return ms;
+  }
+  return snapMs(
+    ms,
+    snapTargetsMs(clips, actions),
+    SNAP_THRESHOLD_PX / pxPerMs,
+  );
+}
+
+function maybeSnapRipple(
+  drag: RippleDrag,
+  clientX: number,
+  pxPerMs: number,
+  enabled: boolean,
+  clips: readonly Clip[],
+  actions: readonly Action[],
+): number {
+  const durationMs = rippleDurationAt(drag, clientX, pxPerMs);
+  if (!enabled || !(pxPerMs > 0)) {
+    return durationMs;
+  }
+  const clip = clips.find((item) => item.id === drag.clipId);
+  if (!clip) {
+    return durationMs;
+  }
+  return snapDurationMs(
+    clip.startMs,
+    durationMs,
+    snapTargetsMs(clips, actions),
+    SNAP_THRESHOLD_PX / pxPerMs,
+  );
 }
 
 export function Timeline() {
@@ -132,12 +172,16 @@ export function Timeline() {
   const photos = project?.photos ?? [];
   const totalMs = totalDurationMs(clips);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const busyRef = useRef(false);
   const pxPerMsRef = useRef(0);
   const totalMsRef = useRef(0);
   const clipsRef = useRef(clips);
+  const actionsRef = useRef(actions);
+  const snapRef = useRef(true);
+  const zoomAnchorRef = useRef<{ ms: number; clientX: number } | null>(null);
   const listenersRef = useRef<{
     move: (event: PointerEvent) => void;
     up: (event: PointerEvent) => void;
@@ -146,18 +190,23 @@ export function Timeline() {
   } | null>(null);
 
   const [width, setWidth] = useState(0);
+  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [snap, setSnap] = useState(true);
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [reorderIds, setReorderIds] = useState<string[] | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pxPerMs = width > 0 && totalMs > 0 ? width / totalMs : 0;
+  const pxPerMs = width > 0 && totalMs > 0 ? (width * zoom) / totalMs : 0;
+  const contentWidth = width > 0 ? width * zoom : 0;
   pxPerMsRef.current = pxPerMs;
   totalMsRef.current = totalMs;
   clipsRef.current = clips;
+  actionsRef.current = actions;
+  snapRef.current = snap;
 
   const measure = useCallback(() => {
-    const el = trackRef.current;
+    const el = viewportRef.current;
     if (!el) {
       return;
     }
@@ -166,7 +215,7 @@ export function Timeline() {
 
   useLayoutEffect(() => {
     measure();
-    const el = trackRef.current;
+    const el = viewportRef.current;
     if (!el) {
       return;
     }
@@ -202,7 +251,14 @@ export function Timeline() {
 
   const applyPlayhead = useCallback(
     (ms: number) => {
-      const next = clampPlayheadMs(ms, totalMsRef.current);
+      const snapped = maybeSnapMs(
+        ms,
+        snapRef.current,
+        pxPerMsRef.current,
+        clipsRef.current,
+        actionsRef.current,
+      );
+      const next = clampPlayheadMs(snapped, totalMsRef.current);
       if (useEditor.getState().playheadMs !== next) {
         setPlayheadMs(next);
       }
@@ -304,10 +360,13 @@ export function Timeline() {
         return;
       }
       if (drag.kind === "ripple") {
-        const durationMs = rippleDurationAt(
+        const durationMs = maybeSnapRipple(
           drag,
           event.clientX,
           pxPerMsRef.current,
+          snapRef.current,
+          clipsRef.current,
+          actionsRef.current,
         );
         drag.durationMs = durationMs;
         setRubberBand((prev) =>
@@ -352,10 +411,13 @@ export function Timeline() {
         return;
       }
       if (drag.kind === "ripple") {
-        const durationMs = rippleDurationAt(
+        const durationMs = maybeSnapRipple(
           drag,
           event.clientX,
           pxPerMsRef.current,
+          snapRef.current,
+          clipsRef.current,
+          actionsRef.current,
         );
         void commitRipple(drag.clipId, durationMs, drag.originDuration);
         return;
@@ -407,6 +469,55 @@ export function Timeline() {
   useEffect(() => {
     return () => stopListening();
   }, [stopListening]);
+
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    const viewport = viewportRef.current;
+    if (!anchor || !viewport || !(pxPerMs > 0)) {
+      return;
+    }
+    zoomAnchorRef.current = null;
+    const viewX = anchor.clientX - viewport.getBoundingClientRect().left;
+    viewport.scrollLeft = Math.max(0, anchor.ms * pxPerMs - viewX);
+  }, [zoom, pxPerMs, contentWidth]);
+
+  const applyZoom = useCallback((next: number, anchorClientX?: number) => {
+    const clamped = clampZoom(next);
+    setZoom((prev) => {
+      if (clamped === prev) {
+        return prev;
+      }
+      const viewport = viewportRef.current;
+      if (viewport && pxPerMsRef.current > 0) {
+        const clientX =
+          anchorClientX ??
+          viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
+        zoomAnchorRef.current = { ms: clientXToMs(clientX), clientX };
+      }
+      return clamped;
+    });
+  }, [clientXToMs]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        applyZoom(zoom * factor, event.clientX);
+        return;
+      }
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && zoom > MIN_ZOOM) {
+        event.preventDefault();
+        viewport.scrollLeft += event.deltaY;
+      }
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [applyZoom, clips.length, zoom]);
 
   const onScrubPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -548,7 +659,7 @@ export function Timeline() {
   const selectedActionId = selection?.type === "action" ? selection.id : null;
   const ticks: number[] = [];
   if (totalMs > 0) {
-    const step = tickStepMs(totalMs);
+    const step = tickStepMs(pxPerMs);
     for (let t = 0; t <= totalMs; t += step) {
       ticks.push(t);
     }
@@ -564,6 +675,59 @@ export function Timeline() {
           {error}
         </p>
       ) : null}
+      <div className="flex items-center gap-1 border-b border-zinc-800 px-2 py-0.5">
+        <button
+          type="button"
+          onClick={() => applyZoom(zoom / ZOOM_STEP)}
+          disabled={zoom <= MIN_ZOOM}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+          aria-label="Zoom out"
+        >
+          <ZoomOut className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => applyZoom(zoom * ZOOM_STEP)}
+          disabled={zoom >= MAX_ZOOM}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+          aria-label="Zoom in"
+        >
+          <ZoomIn className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            zoomAnchorRef.current = null;
+            setZoom(MIN_ZOOM);
+            const viewport = viewportRef.current;
+            if (viewport) {
+              viewport.scrollLeft = 0;
+            }
+          }}
+          disabled={zoom === MIN_ZOOM}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+          aria-label="Fit timeline"
+        >
+          <UnfoldHorizontal className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <span className="px-1 text-[10px] tabular-nums text-zinc-500">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => setSnap((prev) => !prev)}
+          aria-pressed={snap}
+          className={`ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+            snap
+              ? "bg-sky-500/15 text-sky-300"
+              : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          }`}
+          aria-label={snap ? "Disable snap" : "Enable snap"}
+        >
+          <Magnet className="h-3 w-3" aria-hidden />
+          Snap
+        </button>
+      </div>
       <div className="flex min-h-0 flex-1">
         <div className="flex w-12 shrink-0 flex-col border-r border-zinc-800 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
           <div className="h-5 border-b border-zinc-800" />
@@ -573,49 +737,55 @@ export function Timeline() {
           </div>
         </div>
         <div
-          ref={trackRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-          onPointerDown={onScrubPointerDown}
+          ref={viewportRef}
+          className="relative min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
         >
-          <div className="relative h-5 border-b border-zinc-800 bg-zinc-950">
-            {ticks.map((ms) => (
-              <span
-                key={ms}
-                className="absolute top-0.5 -translate-x-1/2 text-[10px] text-zinc-600 first:translate-x-0 last:-translate-x-full"
-                style={{ left: ms * pxPerMs }}
-              >
-                {formatTick(ms)}
-              </span>
-            ))}
+          <div
+            ref={trackRef}
+            className="relative h-full"
+            style={{ width: contentWidth > 0 ? contentWidth : "100%" }}
+            onPointerDown={onScrubPointerDown}
+          >
+            <div className="relative h-5 border-b border-zinc-800 bg-zinc-950">
+              {ticks.map((ms) => (
+                <span
+                  key={ms}
+                  className="absolute top-0.5 -translate-x-1/2 text-[10px] text-zinc-600 first:translate-x-0 last:-translate-x-full"
+                  style={{ left: ms * pxPerMs }}
+                >
+                  {formatTick(ms)}
+                </span>
+              ))}
+            </div>
+            <div className="absolute inset-x-0 bottom-8 top-5">
+              <ClipTrack
+                clips={clips}
+                photos={photos}
+                projectDir={projectDir}
+                photoRev={photoRev}
+                pxPerMs={pxPerMs}
+                selectedId={selectedClipId}
+                rubberBand={rubberBand}
+                reorderIds={reorderIds}
+                draggingId={draggingId}
+                onSelect={onSelectClip}
+                onClipPointerDown={onClipPointerDown}
+                onEdgePointerDown={onEdgePointerDown}
+                onResizeKey={onResizeKey}
+                resizeStepMs={RESIZE_STEP_MS}
+              />
+            </div>
+            <div className="absolute inset-x-0 bottom-0 h-8">
+              <ActionTrack
+                actions={actions}
+                pxPerMs={pxPerMs}
+                totalMs={totalMs}
+                selectedId={selectedActionId}
+                onSelect={onSelectAction}
+              />
+            </div>
+            <Playhead ms={playheadMs} pxPerMs={pxPerMs} />
           </div>
-          <div className="absolute inset-x-0 bottom-8 top-5">
-            <ClipTrack
-              clips={clips}
-              photos={photos}
-              projectDir={projectDir}
-              photoRev={photoRev}
-              pxPerMs={pxPerMs}
-              selectedId={selectedClipId}
-              rubberBand={rubberBand}
-              reorderIds={reorderIds}
-              draggingId={draggingId}
-              onSelect={onSelectClip}
-              onClipPointerDown={onClipPointerDown}
-              onEdgePointerDown={onEdgePointerDown}
-              onResizeKey={onResizeKey}
-              resizeStepMs={RESIZE_STEP_MS}
-            />
-          </div>
-          <div className="absolute inset-x-0 bottom-0 h-8">
-            <ActionTrack
-              actions={actions}
-              pxPerMs={pxPerMs}
-              totalMs={totalMs}
-              selectedId={selectedActionId}
-              onSelect={onSelectAction}
-            />
-          </div>
-          <Playhead ms={playheadMs} pxPerMs={pxPerMs} />
         </div>
       </div>
     </div>

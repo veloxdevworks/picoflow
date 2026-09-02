@@ -1,4 +1,4 @@
-//! OS-specific mount discovery. P0 is macOS; Win/Linux return `[]`.
+//! OS-specific mount discovery (macOS `/Volumes`, Windows letters, Linux media).
 
 pub mod linux;
 pub mod macos;
@@ -13,11 +13,11 @@ pub fn default_source() -> impl VolumeSource {
     }
     #[cfg(target_os = "windows")]
     {
-        windows::WindowsVolumeSource
+        windows::WindowsVolumeSource::default()
     }
     #[cfg(target_os = "linux")]
     {
-        linux::LinuxVolumeSource
+        linux::LinuxVolumeSource::default()
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {

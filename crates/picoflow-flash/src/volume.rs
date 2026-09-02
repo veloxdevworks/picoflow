@@ -89,7 +89,7 @@ pub(crate) fn scan_volume_root(root: &Path) -> io::Result<Vec<RawVolume>> {
 }
 
 #[cfg(unix)]
-fn path_writable(path: &Path) -> bool {
+pub(crate) fn path_writable(path: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
         return false;
@@ -99,7 +99,7 @@ fn path_writable(path: &Path) -> bool {
 }
 
 #[cfg(not(unix))]
-fn path_writable(path: &Path) -> bool {
+pub(crate) fn path_writable(path: &Path) -> bool {
     fs::metadata(path)
         .map(|m| !m.permissions().readonly())
         .unwrap_or(false)

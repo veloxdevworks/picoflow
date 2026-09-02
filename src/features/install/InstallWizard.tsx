@@ -31,7 +31,7 @@ import {
   type PicoVolume,
   type VolumeKind,
 } from "../../types/commands";
-import type { Project, Sequence } from "../../types/generated";
+import type { Project, RunMode, Sequence } from "../../types/generated";
 import {
   BOOTSEL_TIMEOUT_MS,
   CIRCUITPY_TIMEOUT_MS,
@@ -40,6 +40,7 @@ import {
   emptySequence,
   firstWritable,
   nextWritableCircuitpy,
+  runModeHint,
   sequenceOnlyVolume,
   shouldShowResetHint,
   volumeKindLabel,
@@ -125,10 +126,18 @@ async function loadPayload(project: Project | null): Promise<{
   return { manifest, volumes, sequence };
 }
 
+const RUN_MODES: { value: RunMode; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "button", label: "Button" },
+  { value: "serial", label: "Serial" },
+];
+
 /** Re-export at write time so File→Open during the wizard cannot flash a stale sequence. */
-async function resolveSequence(): Promise<Sequence> {
+async function resolveSequence(fallbackRunMode: RunMode): Promise<Sequence> {
   const project = useEditor.getState().project;
-  return project ? exportSequence(project) : emptySequence();
+  return project
+    ? exportSequence(project)
+    : emptySequence("absolute_mouse_keyboard", fallbackRunMode);
 }
 
 function phaseCopy(phase: Phase, mode: InstallMode): string {
@@ -189,7 +198,12 @@ function pickResumeCircuitpy(
 export function InstallWizard({ onClose }: { onClose: () => void }) {
   const titleId = useId();
   const project = useEditor((s) => s.project);
+  const setProject = useEditor((s) => s.setProject);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [fallbackRunMode, setFallbackRunMode] = useState<RunMode>("auto");
+  const fallbackRunModeRef = useRef<RunMode>("auto");
+  const runMode = project?.target.runMode ?? fallbackRunMode;
+  fallbackRunModeRef.current = runMode;
 
   const abortRef = useRef<AbortController | null>(null);
   const genRef = useRef(0);
@@ -245,7 +259,7 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
   const writeFullRuntime = useCallback(
     async (volume: PicoVolume, gen: number) => {
       lastCircuitpyIdRef.current = volume.id;
-      const payload = await resolveSequence();
+      const payload = await resolveSequence(fallbackRunModeRef.current);
       if (!still(gen)) {
         return;
       }
@@ -344,7 +358,7 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
   const runSequenceUpdate = useCallback(
     async (volume: PicoVolume, gen: number) => {
       setMode("sequence");
-      const payload = await resolveSequence();
+      const payload = await resolveSequence(fallbackRunModeRef.current);
       if (!still(gen)) {
         return;
       }
@@ -500,6 +514,27 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
     void openAppLog().catch((err) => setLogError(errorMessage(err)));
   }, []);
 
+  const onRunModeChange = useCallback(
+    (next: RunMode) => {
+      const current = useEditor.getState().project;
+      if (current) {
+        if (current.target.runMode === next) {
+          return;
+        }
+        setProject({
+          ...current,
+          target: { ...current.target, runMode: next },
+        });
+      } else {
+        setFallbackRunMode(next);
+      }
+      setSequence((seq) =>
+        seq && seq.run_mode !== next ? { ...seq, run_mode: next } : seq,
+      );
+    },
+    [setProject],
+  );
+
   const busyWrite =
     phase === "flashing" || phase === "writing" || phase === "ejecting";
   const showResetHint =
@@ -602,12 +637,38 @@ export function InstallWizard({ onClose }: { onClose: () => void }) {
             </div>
           ) : null}
 
-          <p className="text-[11px] text-zinc-600">
-            Run mode: {sequence?.run_mode ?? project?.target.runMode ?? "auto"}
-            {sequence
-              ? ` · ${sequence.events.length} event${sequence.events.length === 1 ? "" : "s"}`
-              : null}
-          </p>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+              Run mode
+            </legend>
+            <div className="flex flex-wrap gap-1">
+              {RUN_MODES.map((option) => {
+                const selected = runMode === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={busyWrite}
+                    aria-pressed={selected}
+                    onClick={() => onRunModeChange(option.value)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium disabled:opacity-40 ${
+                      selected
+                        ? "bg-zinc-100 text-zinc-900"
+                        : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] leading-relaxed text-zinc-600">
+              {runModeHint(runMode)}
+              {sequence
+                ? ` · ${sequence.events.length} event${sequence.events.length === 1 ? "" : "s"}`
+                : null}
+            </p>
+          </fieldset>
 
           {logError ? (
             <p className="text-xs text-red-400" title={logError}>

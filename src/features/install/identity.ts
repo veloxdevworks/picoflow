@@ -1,5 +1,5 @@
 import type { PicoVolume, VolumeKind } from "../../types/commands";
-import type { HidProfile, Sequence } from "../../types/generated";
+import type { HidProfile, RunMode, Sequence } from "../../types/generated";
 
 export const SEQUENCE_SCHEMA_VERSION = 1;
 export const DEFAULT_SETTLE_MS = 1200;
@@ -14,15 +14,27 @@ export const VOLUME_POLL_MS = 400;
 /** Empty events are legal; action authoring is not required for install. */
 export function emptySequence(
   hidProfile: HidProfile = "absolute_mouse_keyboard",
+  runMode: RunMode = "auto",
 ): Sequence {
   return {
     version: SEQUENCE_SCHEMA_VERSION,
-    run_mode: "auto",
+    run_mode: runMode,
     settle_ms: DEFAULT_SETTLE_MS,
     hid_profile: hidProfile,
     button_pin: DEFAULT_BUTTON_PIN,
     events: [],
   };
+}
+
+export function runModeHint(mode: RunMode): string {
+  switch (mode) {
+    case "auto":
+      return "Starts after settle on plug-in.";
+    case "button":
+      return "Wait for GP15 to GND, then play.";
+    case "serial":
+      return "Wait for a USB CDC line containing GO.";
+  }
 }
 
 /** Exact runtime_version + hid_profile match (acceptance #7). */

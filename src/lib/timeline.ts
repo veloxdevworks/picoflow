@@ -72,3 +72,73 @@ export function upcomingKeyframe(
   }
   return best;
 }
+
+/** Fit-or-closer. UI-only; not persisted. */
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 16;
+export const ZOOM_STEP = 1.25;
+/** Pixel radius for playhead / edge snap. */
+export const SNAP_THRESHOLD_PX = 8;
+
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) {
+    return MIN_ZOOM;
+  }
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+/** Clip edges, sequence origin, and keyframe times. */
+export function snapTargetsMs(
+  clips: readonly Clip[],
+  actions: readonly Action[],
+): number[] {
+  const targets = new Set<number>([0]);
+  for (const clip of clips) {
+    targets.add(clip.startMs);
+    targets.add(clip.startMs + clip.durationMs);
+  }
+  for (const action of actions) {
+    targets.add(action.atMs);
+  }
+  return [...targets].sort((a, b) => a - b);
+}
+
+export function snapMs(
+  ms: number,
+  targets: readonly number[],
+  thresholdMs: number,
+): number {
+  if (!(thresholdMs > 0) || targets.length === 0 || !Number.isFinite(ms)) {
+    return ms;
+  }
+  let best = ms;
+  let bestDist = thresholdMs;
+  for (const target of targets) {
+    const dist = Math.abs(target - ms);
+    if (dist <= bestDist) {
+      bestDist = dist;
+      best = target;
+    }
+  }
+  return best;
+}
+
+export function snapDurationMs(
+  startMs: number,
+  durationMs: number,
+  targets: readonly number[],
+  thresholdMs: number,
+): number {
+  const end = snapMs(startMs + durationMs, targets, thresholdMs);
+  return clampClipDurationMs(end - startMs);
+}
+
+/** Aim for ~72px between ticks at the current zoom. */
+export function tickStepMs(pxPerMs: number): number {
+  if (!(pxPerMs > 0)) {
+    return 1000;
+  }
+  const raw = 72 / pxPerMs;
+  const steps = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000];
+  return steps.find((step) => step >= raw) ?? 60000;
+}

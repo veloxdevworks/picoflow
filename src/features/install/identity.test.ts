@@ -5,6 +5,7 @@ import {
   emptySequence,
   firstWritable,
   nextWritableCircuitpy,
+  runModeHint,
   sequenceOnlyVolume,
   shouldShowResetHint,
 } from "./identity";
@@ -27,6 +28,18 @@ describe("emptySequence", () => {
     expect(sequence.hid_profile).toBe("absolute_mouse_keyboard");
     expect(sequence.settle_ms).toBe(1200);
     expect(sequence.button_pin).toBe("GP15");
+  });
+
+  it("accepts a trigger run mode for a project-less install", () => {
+    expect(emptySequence("digitizer_keyboard", "serial").run_mode).toBe("serial");
+  });
+});
+
+describe("runModeHint", () => {
+  it("describes each firmware trigger", () => {
+    expect(runModeHint("auto")).toMatch(/plug-in/i);
+    expect(runModeHint("button")).toMatch(/GP15/);
+    expect(runModeHint("serial")).toMatch(/GO/);
   });
 });
 

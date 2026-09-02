@@ -6,8 +6,15 @@ import {
   clampActionAtMs,
   clampClipDurationMs,
   clampPlayheadMs,
+  clampZoom,
   clipAt,
+  MAX_ZOOM,
   MIN_CLIP_DURATION_MS,
+  MIN_ZOOM,
+  snapDurationMs,
+  snapMs,
+  snapTargetsMs,
+  tickStepMs,
   totalDurationMs,
   upcomingKeyframe,
 } from "./timeline";
@@ -106,4 +113,42 @@ describe("upcomingKeyframe", () => {
       });
     }
   }
+});
+
+describe("zoom and snap", () => {
+  const clips: Clip[] = [
+    { id: "a", photoId: "p", startMs: 0, durationMs: 4000 },
+    { id: "b", photoId: "q", startMs: 4000, durationMs: 2000 },
+  ];
+  const actions: Action[] = [
+    { id: "t", atMs: 1800, type: "tap", x: 0.5, y: 0.5, holdMs: 60 },
+  ];
+
+  it("clamps zoom to [1, 16]", () => {
+    expect(clampZoom(Number.NaN)).toBe(MIN_ZOOM);
+    expect(clampZoom(0.2)).toBe(MIN_ZOOM);
+    expect(clampZoom(1)).toBe(1);
+    expect(clampZoom(99)).toBe(MAX_ZOOM);
+  });
+
+  it("collects clip edges and keyframe times", () => {
+    expect(snapTargetsMs(clips, actions)).toEqual([0, 1800, 4000, 6000]);
+  });
+
+  it("snaps within the threshold and leaves distant times alone", () => {
+    expect(snapMs(1790, [0, 1800, 4000], 20)).toBe(1800);
+    expect(snapMs(1500, [0, 1800, 4000], 20)).toBe(1500);
+    expect(snapMs(10, [0, 1800], 20)).toBe(0);
+  });
+
+  it("snaps a ripple end to a nearby target", () => {
+    expect(snapDurationMs(0, 1790, [0, 1800, 4000], 20)).toBe(1800);
+    expect(snapDurationMs(0, 50, [0, 1800], 20)).toBe(MIN_CLIP_DURATION_MS);
+  });
+
+  it("picks denser ticks when zoomed in", () => {
+    expect(tickStepMs(0.02)).toBe(5000);
+    expect(tickStepMs(0.5)).toBe(200);
+    expect(tickStepMs(0)).toBe(1000);
+  });
 });

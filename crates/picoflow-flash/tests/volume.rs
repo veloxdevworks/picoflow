@@ -125,9 +125,103 @@ fn missing_volumes_root_is_empty() {
 }
 
 #[test]
-fn windows_and_linux_stubs_return_empty() {
-    assert!(WindowsVolumeSource.list_raw().unwrap().is_empty());
-    assert!(LinuxVolumeSource.list_raw().unwrap().is_empty());
+fn linux_scans_media_roots_and_proc_mounts() {
+    let root = tempdir().unwrap();
+    let media = root.path().join("media").join("alice");
+    let run = root.path().join("run").join("media").join("alice");
+    fs::create_dir_all(media.join(LABEL_CIRCUITPY)).unwrap();
+    fs::create_dir_all(run.join(LABEL_RPI_RP2)).unwrap();
+    fs::create_dir_all(media.join("Other")).unwrap();
+
+    let extra = root.path().join("mnt").join(LABEL_CIRCUITPY);
+    fs::create_dir_all(&extra).unwrap();
+    let proc = root.path().join("mounts");
+    fs::write(
+        &proc,
+        format!(
+            "/dev/sdb1 {} vfat rw 0 0\n/dev/sdc1 /media/alice/Other vfat rw 0 0\n",
+            extra.display()
+        ),
+    )
+    .unwrap();
+
+    let vols = LinuxVolumeSource::new(vec![media.clone(), run], Some(proc))
+        .list_raw()
+        .unwrap();
+    assert_eq!(vols.len(), 3);
+    assert!(vols
+        .iter()
+        .any(|v| v.label == LABEL_CIRCUITPY && v.path == media.join(LABEL_CIRCUITPY)));
+    assert!(vols
+        .iter()
+        .any(|v| v.label == LABEL_RPI_RP2 && v.path.ends_with(LABEL_RPI_RP2)));
+    assert!(vols.iter().any(|v| v.path == extra));
+}
+
+#[test]
+fn linux_proc_mounts_dedupes_media_root() {
+    let root = tempdir().unwrap();
+    let media = root.path().join("media").join("alice");
+    let circuitpy = media.join(LABEL_CIRCUITPY);
+    fs::create_dir_all(&circuitpy).unwrap();
+    let proc = root.path().join("mounts");
+    fs::write(
+        &proc,
+        format!("/dev/sdb1 {} vfat rw 0 0\n", circuitpy.display()),
+    )
+    .unwrap();
+
+    let vols = LinuxVolumeSource::new(vec![media], Some(proc))
+        .list_raw()
+        .unwrap();
+    assert_eq!(vols.len(), 1);
+    assert_eq!(vols[0].path, circuitpy);
+}
+
+#[test]
+fn linux_missing_roots_are_empty() {
+    let root = tempdir().unwrap();
+    let vols = LinuxVolumeSource::new(
+        vec![root.path().join("nope")],
+        Some(root.path().join("no-proc")),
+    )
+    .list_raw()
+    .unwrap();
+    assert!(vols.is_empty());
+}
+
+#[test]
+fn windows_filters_drive_roots_by_label() {
+    let root = tempdir().unwrap();
+    let e = root.path().join("E");
+    let f = root.path().join("F");
+    let g = root.path().join("G");
+    fs::create_dir(&e).unwrap();
+    fs::create_dir(&f).unwrap();
+    fs::create_dir(&g).unwrap();
+
+    let vols = WindowsVolumeSource::with_labeled_roots(vec![
+        (LABEL_CIRCUITPY.into(), e.clone()),
+        ("DATA".into(), f),
+        (LABEL_RPI_RP2.into(), g.clone()),
+        ("circuitpy".into(), root.path().join("missing")),
+    ])
+    .list_raw()
+    .unwrap();
+    assert_eq!(vols.len(), 2);
+    assert_eq!(vols[0].label, LABEL_CIRCUITPY);
+    assert_eq!(vols[0].path, e);
+    assert_eq!(vols[1].label, LABEL_RPI_RP2);
+    assert_eq!(vols[1].path, g);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn windows_live_enum_is_empty_off_windows() {
+    assert!(WindowsVolumeSource::default()
+        .list_raw()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
