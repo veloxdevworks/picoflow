@@ -206,3 +206,19 @@ export function logWizardError(args: {
 }): Promise<void> {
   return invoke("log_wizard_error", args);
 }
+
+/** IPC on pointer-up. Live edge drag is CSS-only. */
+export function rippleClip(
+  project: Project,
+  clipId: string,
+  newDurationMs: number,
+): Promise<Project> {
+  return invoke<Project>("ripple_clip", { project, clipId, newDurationMs });
+}
+
+export function reorderClips(
+  project: Project,
+  orderedClipIds: string[],
+): Promise<Project> {
+  return invoke<Project>("reorder_clips", { project, orderedClipIds });
+}

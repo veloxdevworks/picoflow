@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Action, Clip } from "../types/generated";
 import clipAtFixture from "../../crates/picoflow-core/tests/fixtures/timeline/clip_at.json";
-import { clipAt, upcomingKeyframe } from "./timeline";
+import {
+  clampClipDurationMs,
+  clampPlayheadMs,
+  clipAt,
+  MIN_CLIP_DURATION_MS,
+  totalDurationMs,
+  upcomingKeyframe,
+} from "./timeline";
 
 type ClipAtCase = { ms: number; clipId: string | null };
 type UpcomingCase = { ms: number; actionId: string | null };
@@ -24,6 +31,38 @@ describe("clipAt", () => {
       });
     }
   }
+});
+
+describe("totalDurationMs", () => {
+  it("is 0 for no clips and end of the last clip otherwise", () => {
+    expect(totalDurationMs([])).toBe(0);
+    expect(
+      totalDurationMs([
+        { id: "a", photoId: "p", startMs: 0, durationMs: 4000 },
+        { id: "b", photoId: "q", startMs: 4000, durationMs: 2000 },
+      ]),
+    ).toBe(6000);
+  });
+});
+
+describe("clampClipDurationMs", () => {
+  it("enforces the 200ms floor", () => {
+    expect(clampClipDurationMs(Number.NaN)).toBe(MIN_CLIP_DURATION_MS);
+    expect(clampClipDurationMs(0)).toBe(MIN_CLIP_DURATION_MS);
+    expect(clampClipDurationMs(199)).toBe(MIN_CLIP_DURATION_MS);
+    expect(clampClipDurationMs(200)).toBe(200);
+    expect(clampClipDurationMs(1500.4)).toBe(1500);
+  });
+});
+
+describe("clampPlayheadMs", () => {
+  it("stays inside [0, total]", () => {
+    expect(clampPlayheadMs(-10, 4000)).toBe(0);
+    expect(clampPlayheadMs(0, 4000)).toBe(0);
+    expect(clampPlayheadMs(4000, 4000)).toBe(4000);
+    expect(clampPlayheadMs(9000, 4000)).toBe(4000);
+    expect(clampPlayheadMs(100, 0)).toBe(0);
+  });
 });
 
 describe("upcomingKeyframe", () => {
